@@ -1,0 +1,98 @@
+<?xml version="1.0"?>
+<PluginConfig>
+    <SupportURL>http://www.yourdomain.com/plugin/ApplianceModule.html</SupportURL>
+    <Field id="description" type="label">
+        <Label>This Plugin controls (V2 Firmware) LIFX lamps. 😄</Label>
+    </Field>
+    <Field id="copyright" type="label">
+        <Label>Copyright © 2016 Autolog</Label>
+    </Field>
+
+    <Field id="separator-1" type="separator"/>  
+
+    <Field id="help-1" type="label">
+        <Label>Use status polling to update the state of the LIFX lamp(s) periodically.</Label>
+    </Field>
+    <Field type="checkbox" id="statusPolling" defaultValue="false" tooltip="Tick to turn on polling of all LIFX lamps">
+        <Label>Status polling:</Label>
+        <Description>Enable polling of all LIFX lamps.</Description>
+    </Field>
+    <Field id="pollingSeconds" type="menu" defaultValue="300" enabledBindingId="statusPolling" tooltip="Select polling interval">
+        <Label>Polling Interval:</Label>
+        <List>
+            <Option value="300">Every 5 minutes</Option>
+            <Option value="60">Every minute</Option>
+            <Option value="30">Every 30 seconds</Option>
+            <Option value="10">Every 10 seconds</Option>
+            <Option value="5">Every 5 seconds</Option>
+        </List>
+    </Field>
+    <Field id="missedPollLimit" type="textfield" defaultValue="1" enabledBindingId="statusPolling" tooltip="Set number of polls after which if no contact, a LIFX lamp will be flagged with a 'no ack'">
+        <Label>Max polls missed limit?:</Label>
+    </Field>
+    <Field id="help-2" type="label" fontColor="darkgray" fontSize="small" alignWithControl="true">
+        <Label>Specify maximum number of polls allowed to be missed before a LIFX Lamp will be flagged with a 'no ack'</Label>
+    </Field>
+
+    <Field id="separator-2" type="separator"/>  
+
+    <Field id="defaultOnDurationLabel" type="label">
+        <Label>Default durations to use when applying changes to LIFX lamps.</Label>
+    </Field>
+    <Field type="textfield" id="defaultDurationDimBrighten" defaultValue="1.0">
+        <Label>Dim / Brighten Duration:</Label>
+    </Field>
+    <Field type="textfield" id="defaultDurationOn" defaultValue="1.0">
+        <Label>Turn On Duration:</Label>
+    </Field>
+    <Field type="textfield" id="defaultDurationOff" defaultValue="1.0">
+        <Label>Turn Off Duration:</Label>
+    </Field>
+    <Field type="textfield" id="defaultDurationColorWhite" defaultValue="1.0">
+        <Label>Color / White Duration:</Label>
+    </Field>
+    <Field id="help-3" type="label" fontColor="darkgray" fontSize="small" alignWithControl="true">
+        <Label>Specify durations in seconds or part thereof e.g 2.5</Label>
+    </Field>
+
+    <Field id="separator-3" type="separator"/>  
+
+    <Field type="checkbox" id="monitorDebugEnabled" default="false">
+        <Label>Monitoring / debugging:</Label>
+        <Description>Enable monitoring and debugging options.</Description>
+    </Field>
+
+    <Field id="separator-4" type="separator" visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true"/> 
+
+    <Field id="help-4" type="label" fontColor="darkgray" fontSize="small" alignWithControl="true" visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true">
+        <Label>Select monitoring / debugging to be performed by ticking required option(s) below and then clicking Save.</Label>
+    </Field>
+    <Field type="checkbox" id="debugGeneral" defaultValue="false"  visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" tooltip="Enable logging of detailed debugging info." alwaysUseInDialogHeightCalc="true">
+        <Label>General:</Label>
+        <Description>Debug 'general' processing.</Description>
+    </Field>
+    <Field type="checkbox" id="monitorSendReceive" default="false" visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true">
+        <Label>Monitor Send / Receive:</Label>
+        <Description>Monitor messages sent and Received to/from LIFX devices.</Description>
+    </Field>
+    <Field type="checkbox" id="debugSendReceive" default="false" visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true">
+        <Label>Debug Send / Receive:</Label>
+        <Description>Debug 'send / Receive to LIFX devices' processing.</Description>
+    </Field>
+    <Field type="checkbox" id="debugMethodTrace" default="false" visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true">
+        <Label>Method Trace:</Label>
+        <Description>Trace Method calls.</Description>
+    </Field>
+    <Field type="checkbox" id="debugPolling" defaultValue="false" tooltip="Enable debugging of device polling." visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true">
+        <Label>Debug Polling:</Label>
+        <Description>Debug 'polling' processing.</Description>
+    </Field>
+
+    <Field id="separator-5" type="separator" visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true"/> 
+
+    <Field type="textfield" id="debugFilteredIpAddresses" defaultValue="" visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true">
+        <Label>LIFX Lamp Filter IP Address(es):</Label>
+    </Field>
+
+
+</PluginConfig>

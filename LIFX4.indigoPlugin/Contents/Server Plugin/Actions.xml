@@ -1,0 +1,560 @@
+<?xml version="1.0"?>
+
+<Actions>
+
+    <Action id="setColorWhite" deviceFilter="self.lifxDevice">
+        <Name>Set Color / White</Name>
+        <CallbackMethod>setColorWhite</CallbackMethod>
+        <ConfigUI>
+
+            <Field id="instructions" type="label" fontColor="darkgray" alwaysUseInDialogHeightCalc="true">
+                <Label>Specify the values to set the state of the LIFX Device.</Label>
+            </Field>
+
+            <Field id="actionType" type="menu" defaultValue="SELECT_ACTION_TYPE" alwaysUseInDialogHeightCalc="true">
+                <Label>LIFX Action:</Label>
+                <List>
+                    <Option value="SELECT_ACTION_TYPE">- Select Standard or Waveform -</Option>
+                    <Option value="Standard">Standard</Option>
+                    <Option value="Waveform">Waveform</Option>
+                </List>
+            </Field>
+            <Field id="helpMessageType" type="label" fontColor="darkgray" fontSize="mini" alignWithControl="true" alwaysUseInDialogHeightCalc="true">
+                <Label>^ Select Standard or Waveform LIFX action</Label>
+            </Field>
+
+            <Field id="turnOnIfOffStandard" type="checkbox" default="true"
+                visibleBindingId="actionType" visibleBindingValue="Standard">
+                <Label>Turn On if Off:</Label>
+                <Description>Turn device on if off, after setting values.</Description>
+            </Field>
+
+            <Field id="modeStandard" type="menu" defaultValue="SELECT_COLOR_OR_WHITE"
+                visibleBindingId="actionType" visibleBindingValue="Standard" dynamicReload="true">
+                <Label>Color or White?</Label>
+                <List>
+                    <Option value="SELECT_COLOR_OR_WHITE">- Select Color or White -</Option>
+                    <Option value="Color">Color</Option>
+                    <Option value="White">White</Option>
+                </List>
+                <CallbackMethod>modeStandardUpdated</CallbackMethod>
+            </Field>
+            <Field id="modeStandardHelp" type="label" fontColor="darkgray" fontSize="mini" alignWithControl="true"
+                visibleBindingId="actionType" visibleBindingValue="White, Color">
+                <Label>^ Choose Color or White, then specify the required values. To leave an existing value unchanged, set it to '-' (dash)</Label>
+            </Field>
+
+            <Field id="colorStandardColorpicker" type="colorpicker" defaultValue=""
+                visibleBindingId="modeStandard" visibleBindingValue="Color"  dynamicReload="true">
+                <Label>Color:</Label>
+                <CallbackMethod>colorPickerUpdated</CallbackMethod>
+            </Field>
+            <Field id="kelvinStandardColorpicker" type="colorpicker" defaultValue="" readonly="true"
+                visibleBindingId="modeStandard" visibleBindingValue="White">
+                <Label>Kelvin Tint:</Label>
+                <Description>(for information only)</Description>
+            </Field>
+            <Field id="colorStandardColorpickerHelp" type="label" fontColor="darkgray" fontSize="mini" alignWithControl="true"
+                visibleBindingId="modeStandard" visibleBindingValue="Color">
+                <Label>^ Use Color Picker to select color and fill fields below.</Label>
+            </Field>
+
+            <Field id="hueStandard" type="textfield" defaultValue="" alwaysUseInDialogHeightCalc="true"
+                visibleBindingId="modeStandard" visibleBindingValue="Color">
+                <Label>Hue:</Label>
+                <CallbackMethod>hueSaturationBrightnessStandardUpdated</CallbackMethod>
+            </Field>
+            <Field id="hueStandardHelp" type="label" fontColor="darkgray" fontSize="mini" alignWithControl="true"
+                visibleBindingId="modeStandard" visibleBindingValue="Color">
+                <Label>^ Specify Hue value between 0.0 - 360.0</Label>
+            </Field>
+
+            <Field id="saturationStandard" type="textfield" defaultValue=""
+                visibleBindingId="modeStandard" visibleBindingValue="Color">
+                <Label>Saturation:</Label>
+                <CallbackMethod>hueSaturationBrightnessStandardUpdated</CallbackMethod>
+            </Field>
+            <Field id="saturationStandardHelp" type="label" fontColor="darkgray" fontSize="mini" alignWithControl="true"
+                visibleBindingId="modeStandard" visibleBindingValue="Color">
+                <Label>^ Specify Saturation value between 0.0 - 100.0</Label>
+            </Field>
+
+            <Field id="kelvinStandard" type="menu" defaultValue=""
+                visibleBindingId="modeStandard" visibleBindingValue="White">
+                <List class="self" filter="" method="actionConfigListKelvinValues" dynamicReload="true"/>
+                <Label>Kelvin:</Label>
+                <CallbackMethod>kelvinStandardUpdated</CallbackMethod>
+            </Field>
+            <Field id="kelvinStandardHelp" type="label" fontColor="darkgray" fontSize="mini" alignWithControl="true"
+                visibleBindingId="modeStandard" visibleBindingValue="White">
+                <Label>^ Select Kelvin value from menu list</Label>
+            </Field>
+
+            <Field id="brightnessStandard" type="textfield" defaultValue=""
+                visibleBindingId="modeStandard" visibleBindingValue="Color, White">
+                <Label>Brightness:</Label>
+                <CallbackMethod>hueSaturationBrightnessStandardUpdated</CallbackMethod>
+            </Field>
+            <Field id="brightnessStandardHelp" type="label" fontColor="darkgray" fontSize="mini" alignWithControl="true"
+                visibleBindingId="modeStandard" visibleBindingValue="Color, White">
+                <Label>^ Specify Brightness value between 1.0 - 100.0</Label>
+            </Field>
+
+            <Field id="durationStandard" type="textfield" defaultValue=""
+                visibleBindingId="modeStandard" visibleBindingValue="Color, White">
+                <Label>Duration:</Label>
+            </Field>
+            <Field id="durationStandardHelp" type="label" fontColor="darkgray" fontSize="mini" alignWithControl="true"
+                visibleBindingId="modeStandard" visibleBindingValue="Color, White">
+                <Label>^ Specify duration in seconds or part thereof e.g. 2.5</Label>
+            </Field>
+
+            <Field id="modeWaveform" type="menu" defaultValue="SELECT_COLOR_OR_WHITE" alwaysUseInDialogHeightCalc="true"
+                visibleBindingId="actionType" visibleBindingValue="Waveform">
+                <Label>Color or White?:</Label>
+                <List>
+                    <Option value="SELECT_COLOR_OR_WHITE">- Select Color or White -</Option>
+                    <Option value="Color">Color</Option>
+                    <Option value="White">White</Option>
+                </List>
+                <CallbackMethod>modeWaveformUpdated</CallbackMethod>
+            </Field>
+            <Field id="modeWaveformHelp" type="label" fontColor="darkgray" fontSize="mini" alignWithControl="true" alwaysUseInDialogHeightCalc="true"
+                visibleBindingId="actionType" visibleBindingValue="Waveform">
+                <Label>^ Choose Color or White, then specify the required values. To leave an existing value unchanged, set it to '-' (dash)</Label>
+            </Field>
+
+            <Field id="colorWaveformColorpicker" type="colorpicker" defaultValue="" alwaysUseInDialogHeightCalc="true"
+                visibleBindingId="modeWaveform" visibleBindingValue="Color">
+                <Label>Color:</Label>
+                <CallbackMethod>colorPickerUpdated</CallbackMethod>
+            </Field>
+            <Field id="kelvinWaveformColorpicker" type="colorpicker" defaultValue="" readonly="true"
+                visibleBindingId="modeWaveform" visibleBindingValue="White">
+                <Label>Kelvin Tint:</Label>
+                <Description>(for information only)</Description>
+            </Field>
+            <Field id="colorWaveformColorpickerHelp" type="label" fontColor="darkgray" fontSize="mini" alignWithControl="true" alwaysUseInDialogHeightCalc="true"
+                visibleBindingId="modeWaveform" visibleBindingValue="Color">
+                <Label>^ Use Color Picker to select color and fill fields below.</Label>
+            </Field>
+
+            <Field id="hueWaveform" type="textfield" defaultValue="" alwaysUseInDialogHeightCalc="true"
+                visibleBindingId="modeWaveform" visibleBindingValue="Color">
+                <Label>Hue:</Label>
+                <CallbackMethod>hueSaturationBrightnessWaveformUpdated</CallbackMethod>
+            </Field>
+            <Field id="hueWaveformHelp" type="label" fontColor="darkgray" fontSize="mini" alignWithControl="true" alwaysUseInDialogHeightCalc="true"
+                visibleBindingId="modeWaveform" visibleBindingValue="Color">
+                <Label>^ Specify Hue value between 0.0 - 360.0</Label>
+            </Field>
+
+            <Field id="saturationWaveform" type="textfield" defaultValue="" alwaysUseInDialogHeightCalc="true"
+                visibleBindingId="modeWaveform" visibleBindingValue="Color">
+                <Label>Saturation:</Label>
+                <CallbackMethod>hueSaturationBrightnessWaveformUpdated</CallbackMethod>
+            </Field>
+            <Field id="saturationWaveformHelp" type="label" fontColor="darkgray" fontSize="mini" alignWithControl="true" alwaysUseInDialogHeightCalc="true"
+                visibleBindingId="modeWaveform" visibleBindingValue="Color">
+                <Label>^ Specify Saturation value between 0.0 - 100.0</Label>
+            </Field>
+
+            <Field id="kelvinWaveform" type="menu" defaultValue=""
+                visibleBindingId="modeWaveform" visibleBindingValue="White">
+                <List class="self" filter="" method="actionConfigListKelvinValues" dynamicReload="true"/>
+                <Label>Kelvin:</Label>
+                <CallbackMethod>kelvinWaveformUpdated</CallbackMethod>
+            </Field>
+
+
+            <Field id="kelvinWaveformHelp" type="label" fontColor="darkgray" fontSize="mini" alignWithControl="true"
+                visibleBindingId="modeWaveform" visibleBindingValue="White">
+                <Label>^ Specify Kelvin value between 2500 - 9000</Label>
+            </Field>
+
+            <Field id="brightnessWaveform" type="textfield" defaultValue="" alwaysUseInDialogHeightCalc="true"
+                visibleBindingId="modeWaveform" visibleBindingValue="Color, White">
+                <Label>Brightness:</Label>
+                <CallbackMethod>hueSaturationBrightnessWaveformUpdated</CallbackMethod>
+            </Field>
+            <Field id="brightnessWaveformHelp" type="label" fontColor="darkgray" fontSize="mini" alignWithControl="true"
+                visibleBindingId="modeWaveform" visibleBindingValue="Color">
+                <Label>^ Specify Brightness value between 1.0 - 100.0</Label>
+            </Field>
+
+            <Field id="transientWaveform" type="checkbox" defaultValue="" alwaysUseInDialogHeightCalc="true"
+                visibleBindingId="modeWaveform" visibleBindingValue="Color, White">
+                <Label>Transient:</Label>
+                <Description>Back to original (ticked) or leave as-is</Description>
+            </Field>
+            <Field id="transientWaveformHelp" type="label" fontColor="darkgray" fontSize="mini" alignWithControl="true" alwaysUseInDialogHeightCalc="true" 
+                visibleBindingId="modeWaveform" visibleBindingValue="Color, White">
+                <Label>^ Tick to return to original color or uncheck to leave color as is at end of waveform</Label>
+            </Field>
+
+            <Field id="periodWaveform" type="textfield" defaultValue="" alwaysUseInDialogHeightCalc="true"
+                visibleBindingId="modeWaveform" visibleBindingValue="Color, White">
+                <Label>Period:</Label>
+            </Field>
+            <Field id="periodWaveformHelp" type="label" fontColor="darkgray" fontSize="mini" alignWithControl="true" alwaysUseInDialogHeightCalc="true" 
+                visibleBindingId="modeWaveform" visibleBindingValue="Color, White">
+                <Label>^ Length of one cycle in milliseconds</Label>
+            </Field>
+
+            <Field id="cyclesWaveform" type="textfield" defaultValue="" alwaysUseInDialogHeightCalc="true" 
+                visibleBindingId="modeWaveform" visibleBindingValue="Color, White">
+                <Label>Cycles:</Label>
+            </Field>
+            <Field id="cyclesWaveformHelp" type="label" fontColor="darkgray" fontSize="mini" alignWithControl="true" alwaysUseInDialogHeightCalc="true"
+                visibleBindingId="modeWaveform" visibleBindingValue="Color, White">
+                <Label>^ Number of cycles to repeat waveform</Label>
+            </Field>
+
+            <Field id="dutyCycleWaveform" type="menu" defaultValue="0" alwaysUseInDialogHeightCalc="true"
+                visibleBindingId="modeWaveform" visibleBindingValue="Color, White">
+                <Label>Duty Cycle:</Label>
+                <List>
+                    <Option value="0">Equal Time on Both</Option>
+                    <Option value="1">More Time on Original</Option>
+                    <Option value="-1">More Time on New</Option>
+                </List>
+            </Field>
+
+            <Field id="dutyCycleWaveformHelp" type="label" fontColor="darkgray" fontSize="mini" alignWithControl="true" alwaysUseInDialogHeightCalc="true"
+                visibleBindingId="modeWaveform" visibleBindingValue="Color, White">
+                <Label>^ Select whether more time is spent on the original color, the new color or both the same</Label>
+            </Field>
+
+            <Field id="typeWaveform" type="menu" defaultValue="0" alwaysUseInDialogHeightCalc="true"
+                visibleBindingId="modeWaveform" visibleBindingValue="Color, White">
+                <Label>Waveform:</Label>
+                <List>
+                    <Option value="0">Saw</Option>
+                    <Option value="1">Sine</Option>
+                    <Option value="2">Half-Sine</Option>
+                    <Option value="3">Triangle</Option>
+                    <Option value="4">Pulse</Option>
+                </List>
+            </Field>
+            <Field id="typeWaveformHelp" type="label" fontColor="darkgray" fontSize="mini" alignWithControl="true" alwaysUseInDialogHeightCalc="true"
+                visibleBindingId="modeWaveform" visibleBindingValue="Color, White">
+                <Label>^ select type of flashing pattern to be used in waveform</Label>
+            </Field>
+
+
+            <Field id="separator-1" type="separator" alwaysUseInDialogHeightCalc="true"/> 
+
+
+
+
+
+
+            <Field id="option" type="menu" defaultValue="SELECT_OPTION" alwaysUseInDialogHeightCalc="true">
+                <Label>Pre-Fill Options:</Label>
+                <List>
+                    <Option value="SELECT_OPTION">- Select Option -</Option>
+                    <Option value="LIFX_DEVICE">Set values from LIFX Device</Option>
+                    <Option value="PRESET">Set values from Preset</Option>
+                </List>
+                <CallbackMethod>actionConfigOptionSelected</CallbackMethod>
+            </Field>
+
+            <Field id="optionSelectionHelp" type="label" readonly="true" fontSize="small" fontColor="darkgray" alwaysUseInDialogHeightCalc="true">
+                <Label>Choose Pre-Fill Option to use values from another LIFX Device or Preset to set the new values for your action or Preset Save/Update (see Preset Options below).</Label>
+            </Field>
+
+<!--             <Field id="separator-2" type="separator" alwaysUseInDialogHeightCalc="true"
+                   visibleBindingId="option" visibleBindingValue="SELECT_OPTION"/> 
+
+            <Field id="optionHeadingLifxDevice" type="label"
+                visibleBindingId="option" visibleBindingValue="LIFX_DEVICE">
+                <Label>Pre-fill from LIFX Device values:</Label>
+            </Field>
+ -->            <Field id="optionLifxDeviceList" type="menu" dynamicReload="true"
+                   visibleBindingId="option" visibleBindingValue="LIFX_DEVICE">
+                <Label>LIFX Device:</Label>
+                <List class="self" filter="" method="actionConfigListLifxDevices" dynamicReload="true"/>
+                <CallbackMethod>actionConfigLifxDeviceSelected</CallbackMethod>
+            </Field>
+            <Field id="lifxMode" type="textfield" defaultValue="" readonly="true" hidden="true"
+                    visibleBindingId="option" visibleBindingValue="LIFX_DEVICE">
+                <Label>Color or White?</Label>
+            </Field>
+            <Field id="colorLifxColorpicker" type="colorpicker" defaultValue="" readonly="true"
+                visibleBindingId="lifxMode" visibleBindingValue="Color">
+                <Label>Color:</Label>
+            </Field>
+            <Field id="kelvinLifxColorpicker" type="colorpicker" defaultValue="" readonly="true"
+                visibleBindingId="lifxMode" visibleBindingValue="White">
+                <Label>Kelvin Tint:</Label>
+                <Description>(for information only)</Description>
+            </Field>
+            <Field id="lifxHue" type="textfield" defaultValue="" readonly="true"
+                    visibleBindingId="lifxMode" visibleBindingValue="Color">
+                <Label>Hue:</Label>
+            </Field>
+            <Field id="lifxSaturation" type="textfield" defaultValue="" readonly="true"
+                    visibleBindingId="lifxMode" visibleBindingValue="Color">
+                <Label>Saturation:</Label>
+            </Field>
+            <Field id="lifxKelvinStatic" type="textfield" defaultValue="" readonly="true"
+                visibleBindingId="lifxMode" visibleBindingValue="White">
+                <Label>Kelvin:</Label>
+            </Field>
+            <Field id="lifxBrightness" type="textfield" defaultValue="" readonly="true"
+                   visibleBindingId="lifxMode" visibleBindingValue="Color, White">
+                <Label>Brightness:</Label>
+            </Field>
+
+            <Field id="applyLifxOptionValues" type="button" tooltip="Click button to apply selected values to fields above"
+                visibleBindingId="lifxMode" visibleBindingValue="Color, White">
+                <Title>Apply LIFX device values</Title>
+                <CallbackMethod>actionConfigApplyLifxOptionValues</CallbackMethod>
+            </Field>
+
+<!--             <Field id="optionHeadingPreset" type="label" alwaysUseInDialogHeightCalc="true"
+                visibleBindingId="option" visibleBindingValue="PRESET">
+                <Label>Pre-fill from Preset Values:</Label>
+            </Field>
+ -->
+            <Field id="optionPresetList" type="menu" defaultValue="SELECT_PRESET" alwaysUseInDialogHeightCalc="true"
+                   visibleBindingId="option" visibleBindingValue="PRESET">
+                <Label>Preset Name:</Label>
+                <List class="self" filter="" method="processPresetApplyDefineGenerator" dynamicReload="true"/>
+                <CallbackMethod>actionConfigPresetSelected</CallbackMethod>
+            </Field>
+
+            <Field id="presetSelected" type="textfield" defaultValue="NO" readonly="true" hidden="true"
+                    visibleBindingId="option" visibleBindingValue="PRESET">
+                <Label>Preset Selected ?:</Label>
+            </Field>
+
+
+
+            <Field id="actionTypePreset" type="textfield" defaultValue="Standard" readonly="true" alwaysUseInDialogHeightCalc="true"
+                    dynamicReload="true" 
+                    visibleBindingId="presetSelected" visibleBindingValue="YES">
+                <Label>Preset LIFX Action:</Label>
+            </Field>
+
+            <Field id="presetTurnOnIfOffStandardStatic" type="textfield" default="true" readonly="true"
+                visibleBindingId="actionTypePreset" visibleBindingValue="Standard">
+                <Label>Turn On if Off:</Label>
+            </Field>
+
+            <Field id="presetModeStandard" type="textfield" defaultValue="" readonly="true"
+                    dynamicReload="true" 
+                    visibleBindingId="actionTypePreset" visibleBindingValue="Standard">
+                <Label>Color or White?</Label>
+            </Field>
+
+            <Field id="colorPresetColorpicker" type="colorpicker" defaultValue="" readonly="true"
+                visibleBindingId="presetModeStandard" visibleBindingValue="Color">
+                <Label>Color:</Label>
+            </Field>
+            <Field id="kelvinPresetColorpicker" type="colorpicker" defaultValue="" readonly="true"
+                visibleBindingId="presetModeStandard" visibleBindingValue="White">
+                <Label>Kelvin Tint:</Label>
+                <Description>(for information only)</Description>
+            </Field>
+
+            <Field id="presetHueStandard" type="textfield" defaultValue="" readonly="true"
+                    visibleBindingId="presetModeStandard" visibleBindingValue="Color">
+                <Label>Hue:</Label>
+            </Field>
+            <Field id="presetSaturationStandard" type="textfield" defaultValue="" readonly="true"
+                    visibleBindingId="presetModeStandard" visibleBindingValue="Color">
+                <Label>Saturation:</Label>
+            </Field>
+            <Field id="presetBrightnessStandard" type="textfield" defaultValue="" readonly="true"
+                   visibleBindingId="presetModeStandard" visibleBindingValue="Color, White">
+                <Label>Brightness:</Label>
+            </Field>
+            <Field id="presetKelvinStandardStatic" type="textfield" defaultValue="" readonly="true"
+                visibleBindingId="presetModeStandard" visibleBindingValue="White">
+                <Label>Kelvin:</Label>
+            </Field>
+            <Field id="presetDurationStandard" type="textfield" defaultValue="" readonly="true"
+                   visibleBindingId="presetModeStandard" visibleBindingValue="Color, White">
+                <Label>Duration:</Label>
+            </Field>
+
+            <Field id="presetModeWaveform" type="textfield" defaultValue="" readonly="true" alwaysUseInDialogHeightCalc="true"
+                    dynamicReload="true" 
+                    visibleBindingId="actionTypePreset" visibleBindingValue="Waveform">
+                <Label>Color or White?</Label>
+            </Field>
+
+            <Field id="colorPresetWaveformColorpicker" type="colorpicker" defaultValue="" readonly="true" alwaysUseInDialogHeightCalc="true"
+                visibleBindingId="presetModeWaveform" visibleBindingValue="Color">
+                <Label>Color:</Label>
+            </Field>
+            <Field id="kelvinPresetWaveformColorpicker" type="colorpicker" defaultValue="" readonly="true"
+                visibleBindingId="presetModeWaveform" visibleBindingValue="White">
+                <Label>Kelvin Tint:</Label>
+                <Description>(for information only)</Description>
+            </Field>
+            <Field id="presetHueWaveform" type="textfield" defaultValue="" readonly="true" alwaysUseInDialogHeightCalc="true"
+                    visibleBindingId="presetModeWaveform" visibleBindingValue="Color">
+                <Label>Hue [W]:</Label>
+            </Field>
+            <Field id="presetSaturationWaveform" type="textfield" defaultValue="" readonly="true" alwaysUseInDialogHeightCalc="true"
+                    visibleBindingId="presetModeWaveform" visibleBindingValue="Color">
+                <Label>Saturation [W]:</Label>
+            </Field>
+            <Field id="presetBrightnessWaveform" type="textfield" defaultValue="" readonly="true" alwaysUseInDialogHeightCalc="true"
+                   visibleBindingId="presetModeWaveform" visibleBindingValue="White, Color">
+                <Label>Brightness [W]:</Label>
+            </Field>
+            <Field id="presetKelvinWaveformStatic" type="textfield" defaultValue="" readonly="true"
+                visibleBindingId="presetModeWaveform" visibleBindingValue="White">
+                <Label>Kelvin:</Label>
+            </Field>
+            <Field id="presetTransientWaveform" type="checkbox" defaultValue="false"  readonly="true" alwaysUseInDialogHeightCalc="true"
+                    visibleBindingId="presetModeWaveform" visibleBindingValue="Color, White">
+                <Label>Transient:</Label>
+            </Field>
+            <Field id="presetPeriodWaveform" type="textfield" defaultValue="" readonly="true" alwaysUseInDialogHeightCalc="true"
+                    visibleBindingId="presetModeWaveform" visibleBindingValue="Color, White">
+                <Label>Period:</Label>
+            </Field>
+            <Field id="presetCyclesWaveform" type="textfield" defaultValue="" readonly="true" alwaysUseInDialogHeightCalc="true"
+                    visibleBindingId="presetModeWaveform" visibleBindingValue="Color, White">
+                <Label>Cycles:</Label>
+            </Field>
+            <Field id="presetDutyCycleWaveform" type="menu" defaultValue="0" readonly="true" alwaysUseInDialogHeightCalc="true"
+                    visibleBindingId="presetModeWaveform" visibleBindingValue="Color, White">
+                <Label>Duty Cycle:</Label>
+                <List>
+                    <Option value="0">Equal Time on Both</Option>
+                    <Option value="1">More Time on Original</Option>
+                    <Option value="-1">More Time on New</Option>
+                </List>
+            </Field>
+            <Field id="presetTypeWaveform" type="menu" defaultValue="0" readonly="true" alwaysUseInDialogHeightCalc="true"
+                    visibleBindingId="presetModeWaveform" visibleBindingValue="Color, White">
+                <Label>Waveform:</Label>
+                <List>
+                    <Option value="0">Saw</Option>
+                    <Option value="1">Sine</Option>
+                    <Option value="2">Half-Sine</Option>
+                    <Option value="3">Triangle</Option>
+                    <Option value="4">Pulse</Option>
+                </List>
+            </Field>
+
+            <Field id="applyPresetStandardOptionValues1" type="button" tooltip="Click button to apply selected values to fields above" alwaysUseInDialogHeightCalc="true"
+                visibleBindingId="presetModeStandard" visibleBindingValue="White, Color">
+                <Title>Apply Standard Preset values</Title>
+                <CallbackMethod>actionConfigApplyStandardPresetOptionValues</CallbackMethod>
+            </Field>
+            <Field id="applyPresetWaveformOptionValues1" type="button" tooltip="Click button to apply selected values to fields above"
+                visibleBindingId="presetModeWaveform" visibleBindingValue="White, Color">
+                <Title>Apply Waveform Preset values</Title>
+                <CallbackMethod>actionConfigApplyWaveformPresetOptionValues</CallbackMethod>
+            </Field>
+
+            <Field id="separator-3" type="separator"/> 
+
+
+            <Field type="menu" id="selectedPresetOption" defaultValue="presetOption1"> alwaysUseInDialogHeightCalc="true"
+                <Label>Preset Options:</Label>
+                <List>
+                    <Option value="NONE">No Action</Option>
+                    <Option value="presetSave">Save New Preset</Option>
+                    <Option value="presetUpdate">Update Existing Preset</Option>
+                </List>
+                <CallbackMethod>actionConfigPresetActionSelected</CallbackMethod>
+            </Field>
+            <Field id="newPresetName" type="textfield" visibleBindingId="selectedPresetOption" visibleBindingValue="presetSave"> alwaysUseInDialogHeightCalc="true"
+                <Label>Preset Name:</Label>
+                <Description>Specify name for new preset</Description>
+            </Field>
+            <Field id="updatePresetList" type="menu" alwaysUseInDialogHeightCalc="true" 
+                   visibleBindingId="selectedPresetOption" visibleBindingValue="presetUpdate">
+                <Label>Preset to Update:</Label>
+                <List class="self" filter="" method="processPresetApplyDefineGenerator" dynamicReload="true"/>
+            </Field>
+
+            <Field id="savePreset" type="button" tooltip="Click button to save new preset" alwaysUseInDialogHeightCalc="true"
+                   visibleBindingId="selectedPresetOption" visibleBindingValue="presetSave">
+                <Title>Save New Preset</Title>
+                <CallbackMethod>actionConfigPresetSaveButtonPressed</CallbackMethod>
+            </Field>
+
+            <Field id="updatePreset" type="button" tooltip="Click button to update existing preset"
+                   visibleBindingId="selectedPresetOption" visibleBindingValue="presetUpdate">
+                <Title>Update Existing Preset</Title>
+                <CallbackMethod>actionConfigPresetUpdateButtonPressed</CallbackMethod>
+            </Field>
+
+            <Field type="menu" id="resultPreset" defaultValue="resultNa" hidden="true"> alwaysUseInDialogHeightCalc="true"
+                <Label>Preset Result:</Label>
+                <List>
+                    <Option value="resultNa">n/a</Option>
+                    <Option value="resultSaveOk">ok</Option>
+                    <Option value="resultUpdateOk">ok</Option>
+                    <Option value="resultSaveError">Save Error</Option>
+                    <Option value="resultUpdateError">Update Error</Option>
+                    <Option value="resultInvalidValue">Invalid</Option>
+                </List>
+            </Field>
+
+            <Field id="presetResultSaveOk" type="label" fontSize="small" fontColor="green" alignWithControl="true" alwaysUseInDialogHeightCalc="true"
+                visibleBindingId="resultPreset" visibleBindingValue="resultSaveOk">
+                <Label>SUCCESS: Preset successfully saved</Label>
+            </Field>
+            <Field id="presetResultUpdateOk" type="label" fontSize="small" fontColor="green" alignWithControl="true"
+                visibleBindingId="resultPreset" visibleBindingValue="resultUpdateOk">
+                <Label>SUCCESS: Preset successfully updated</Label>
+            </Field>
+            <Field id="presetResultSaveError" type="label" fontSize="small" fontColor="red" alignWithControl="true"
+                visibleBindingId="resultPreset" visibleBindingValue="resultSaveError">
+                <Label>ERROR: Unable to create preset variable</Label>
+            </Field>
+            <Field id="presetResultUpdateError" type="label" fontSize="small" fontColor="red" alignWithControl="true"
+                visibleBindingId="resultPreset" visibleBindingValue="resultUpdateError">
+                <Label>ERROR: Unable to update preset variable</Label>
+            </Field>
+            <Field id="resultInvalidValue" type="label" fontSize="small" fontColor="red" alignWithControl="true"
+                visibleBindingId="resultPreset" visibleBindingValue="resultInvalidValue">
+                <Label>ERROR: TO BE REPLACED BY SHOWALERT</Label>
+            </Field>
+
+            <Field id="separator-4" type="separator" alwaysUseInDialogHeightCalc="true"/>
+
+            <Field id="instructions2" type="label" fontSize="regular" fontColor="darkgray" alwaysUseInDialogHeightCalc="true">
+                <Label>Remember to SAVE even if you have already saved a new Preset or updated an existing Preset using Preset Options above, otherwise your settings won't get saved into the Action Group!</Label>
+            </Field>
+
+
+        </ConfigUI>
+    </Action>
+
+    <Action id="applyPreset" deviceFilter="self.lifxDevice">
+        <Name>Apply Preset</Name>
+        <CallbackMethod>processPresetApply</CallbackMethod>
+        <ConfigUI>
+            <Field id="PresetId" type="menu" defaultValue="0">
+                <Label>Select Preset To Apply:</Label>
+                <List class="self" filter="" method="processPresetApplyDefineGenerator"/>
+            </Field>
+            <Field id="PresetDuration" type="textfield" defaultValue="2">
+                <Label>Set Duration To:</Label>
+                <Description>Duration for preset change</Description>
+            </Field>
+
+            <Field id="PresetDurationHelp" type="label" fontColor="darkgray" fontSize="mini" alignWithControl="true">
+                <Label>^ Duration (in seconds) will only be used if the Preset is executing a Standard action. It is ignored for Waveform actions.</Label>
+            </Field>
+
+
+        </ConfigUI>
+    </Action>
+
+    <Action id="discoverDevices">
+        <Name>Discover LIFX Devices</Name>
+        <CallbackMethod>processDiscoverDevices</CallbackMethod>
+    </Action>
+
+</Actions>

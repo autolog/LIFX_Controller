@@ -1,0 +1,2486 @@
+#! /usr/bin/env python
+# -*- coding: utf-8 -*-
+#
+# LIFX V4 Controller - Main © Autolog 2016
+#
+
+import colorsys
+from datetime import datetime
+try:
+    import indigo
+except:
+    pass
+import logging
+import Queue
+import re
+import threading
+
+from constants import *
+from lifxlan.lifxlan import *
+from polling import ThreadPolling
+from sendReceiveMessages import ThreadSendReceiveMessages
+
+
+class Plugin(indigo.PluginBase):
+
+    def __init__(self, pluginId, pluginDisplayName, pluginVersion, pluginPrefs):
+        indigo.PluginBase.__init__(self, pluginId, pluginDisplayName, pluginVersion, pluginPrefs)
+
+        # Initialise dictionary to store plugin Globals
+        self.globals = {}
+
+        # Initialise dictionary for debug in plugin Globals
+        self.globals['debug'] = {}
+        self.globals['debug']['monitorDebugEnabled']  = False  # if False it indicates no debugging is active else it indicates that at least one type of debug is active
+        self.globals['debug']['debugFilteredIpAddresses'] = []  # Set to LIFX Lamp IP Address(es) to limit processing for debug purposes
+        self.globals['debug']['debugFilteredIpAddressesUI'] = ''  # Set to LIFX Lamp IP Address(es) to limit processing for debug purposes (UI version)
+        self.globals['debug']['debugGeneral']         = logging.INFO  # For general debugging of the main thread
+        self.globals['debug']['monitorSendReceive']   = logging.INFO  # For monitoring messages sent to LIFX lamps 
+        self.globals['debug']['debugSendReceiveSend'] = logging.INFO  # For debugging messages sent to LIFX lamps
+        self.globals['debug']['debugMethodTrace']     = logging.INFO  # For displaying method invocations i.e. trace method
+        self.globals['debug']['debugPolling']         = logging.INFO  # For polling debugging
+        self.globals['debug']['previousDebugGeneral']       = logging.INFO  # For general debugging of the main thread
+        self.globals['debug']['previousMonitorSendReceive'] = logging.INFO  # For monitoring messages sent to LIFX lamps 
+        self.globals['debug']['previousDebugSendReceive']   = logging.INFO  # For debugging messages sent to LIFX lamps
+        self.globals['debug']['previousDebugMethodTrace']   = logging.INFO  # For displaying method invocations i.e. trace method
+        self.globals['debug']['previousDebugPolling']       = logging.INFO  # For polling debugging
+
+        # Setup Logging
+        logformat = logging.Formatter('%(asctime)s.%(msecs)03d\t%(levelname)-12s\t%(name)s.%(funcName)-25s %(msg)s', datefmt='%Y-%m-%d %H:%M:%S')
+        self.plugin_file_handler.setFormatter(logformat)
+        self.plugin_file_handler.setLevel(logging.INFO)  # Master Logging Level for Plugin Log file
+        self.indigo_log_handler.setLevel(logging.INFO)   # Logging level for Indigo Event Log
+        self.generalLogger = logging.getLogger("Plugin.general")
+        self.generalLogger.setLevel(self.globals['debug']['debugGeneral'])
+        self.methodTracer = logging.getLogger("Plugin.method")  
+        self.methodTracer.setLevel(self.globals['debug']['debugMethodTrace'])
+
+        # Now logging is set-up, output Initialising Message
+        self.generalLogger.info(u"Autolog 'LIFX V4 Controller' initializing . . .")
+
+        # Count of number of discoveries performed
+        self.globals['discoveryCount'] = 0  
+
+        # Initialise dictionary to store internal details about LIFX devices
+        self.globals['lifx'] = {} 
+
+        self.globals['threads'] = {}
+        self.globals['threads']['sendReceiveMessages'] = {}
+        self.globals['threads']['polling'] = {}
+
+        self.globals['threads']['runConcurrentActive'] = False
+
+        # Initialise dictionary to store folder Ids
+        self.globals['folders'] = {}
+        self.globals['folders']['DevicesId'] = 0  # Id of Devices folder to hold LIFX devices
+        self.globals['folders']['VariablesId'] = 0   # Id of Variables folder to hold LIFX preset variables
+
+        # Initialise dictionary to store discovery timer
+        self.globals['discoveryTimer'] = {}
+
+        # Initialise dictionary to store per-lamp timers
+        self.globals['deviceTimers'] = {}
+
+        # Initialise dictionary to store message queues
+        self.globals['queues'] = {}
+        self.globals['queues']['messageToSend'] = ''  # Set-up in plugin start (used to process commands, some of which will be sent to the lifx-http server)
+        self.globals['queues']['returnedResponse'] = '' # Set-up in plugin start (a common returned response queue)
+        self.globals['queues']['initialised'] = False
+
+        # Initialise dictionary for polling thread
+        self.globals['polling'] = {}
+        self.globals['polling']['threadActive'] = False        
+        self.globals['polling']['status'] = False
+        self.globals['polling']['seconds'] = float(300.0)  # 5 minutes
+        self.globals['polling']['forceThreadEnd'] = False
+        self.globals['polling']['quiesced'] = False
+        self.globals['polling']['missedLimit'] = int(2)  # i.e. 10 minutes in 'seconds' = 300 (5 mins)
+        self.globals['polling']['count'] = int(0)
+        self.globals['polling']['trigger'] = int(0)
+
+        # Initialise dictionary for constants
+        self.globals['constant'] = {}
+        self.globals['constant']['defaultDatetime'] = datetime.strptime("2000-01-01","%Y-%m-%d")
+
+        self.validatePrefsConfigUi(pluginPrefs)  # Validate the Plugin Config
+        
+        self.setDebuggingLevels(pluginPrefs)  # Check monitoring / debug / filered IP address options 
+
+    def __del__(self):
+
+        indigo.PluginBase.__del__(self)
+
+    def startup(self):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        # Initialise validation flags - Used to ensure thread safe processing 
+        self.validateDeviceFlags = {}
+        self.validateActionFlags = {}
+
+        # Create LIFX folder name in variables (for presets) and devices (for lamps)
+
+        folderName = "LIFX"
+        if folderName not in indigo.variables.folders:
+            folder = indigo.variables.folder.create(folderName)
+        self.globals['folders']['VariablesId'] = indigo.variables.folders.getId(folderName)
+
+        folderName = "LIFX"
+        if folderName not in indigo.devices.folders:
+            folder = indigo.devices.folder.create(folderName)
+        self.globals['folders']['DevicesId'] = indigo.devices.folders.getId(folderName)
+
+        indigo.devices.subscribeToChanges()
+
+        # LIFX device initialisation
+
+        for dev in indigo.devices.iter("self"):
+            self.generalLogger.debug(u'LIFX INDIGO DEVICE: %s [%s = %s]' % (dev.name, dev.states['ipAddress'], dev.address))
+            self.globals['lifx'][dev.id] = {}
+            self.globals['lifx'][dev.id]['started']             = False
+            self.globals['lifx'][dev.id]['initialisedFromlamp'] = False
+            self.globals['lifx'][dev.id]['mac_addr']            = dev.address         # eg. 'd0:73:d5:0a:bc:de'
+            self.globals['lifx'][dev.id]['lifxLanLightObject']  = None
+            # self.globals['lifx'][dev.id]['label']               = dev.name
+            dev.setErrorStateOnServer(u"no ack")  # Default to 'no ack' status
+
+
+        self.generalLogger.info(u"Discovering LIFX devices on network . . .")
+        self.globals['lifxLanClient'] = LifxLAN(None)  # Discover LIFX Devices
+        self.globals['lifxDevices'] = self.globals['lifxLanClient'].get_lights()
+        for lifxDevice in self.globals['lifxDevices']:
+            lifxDeviceLabel = str(lifxDevice.get_label()).rstrip()
+            lifxDeviceMacAddr = lifxDevice.mac_addr
+            lifxDeviceIpAddress = lifxDevice.ip_addr
+            lifxDeviceIpPort = lifxDevice.port
+            self.generalLogger.info(u"'%s' discovered at %s [%s] using Port %s" % (lifxDeviceLabel, lifxDeviceIpAddress, lifxDeviceMacAddr, lifxDeviceIpPort))
+
+            lifxDeviceMatchedtoIndigoDevice = False
+            for devId in self.globals['lifx']:
+                if lifxDevice.mac_addr == self.globals['lifx'][devId]['mac_addr']:
+                    lifxDeviceMatchedtoIndigoDevice = True
+                    break
+            if not lifxDeviceMatchedtoIndigoDevice:
+                dev = indigo.device.create(protocol=indigo.kProtocol.Plugin,
+                    address=lifxDeviceMacAddr,
+                    name=lifxDeviceLabel, 
+                    description='LIFX Device', 
+                    pluginId="com.autologplugin.indigoplugin.lifxcontroller",
+                    deviceTypeId="lifxDevice",
+                    props={"onBrightensToLast": True, 
+                           "SupportsColor": True,
+                           "SupportsRGB": True,
+                           "SupportsWhite": True,
+                           "SupportsTwoWhiteLevels": False,
+                           "SupportsWhiteTemperature": True},
+                    folder=self.globals['folders']['DevicesId']) 
+
+                dev.setErrorStateOnServer(u"no ack")  # Default to 'no ack' status
+
+                self.globals['lifx'][dev.id] = {}
+                self.globals['lifx'][dev.id]['started']             = False
+                self.globals['lifx'][dev.id]['initialisedFromlamp'] = False
+                self.globals['lifx'][dev.id]['mac_addr']            = dev.address         # eg. 'd0:73:d5:0a:bc:de'
+                self.globals['lifx'][dev.id]['lifxLanLightObject']  = None
+                # self.globals['lifx'][dev.id]['label']               = lifxDeviceLabel
+                devId = dev.id
+
+            self.globals['lifx'][devId]['lifxLanLightObject']  = Light(lifxDeviceMacAddr, lifxDeviceIpAddress)
+            self.globals['lifx'][dev.id]['port']  = lifxDeviceIpPort
+
+        # Create process queues
+        self.globals['queues']['messageToSend'] = Queue.PriorityQueue()  # Used to queue commands to be sent to the a lifx lamp
+        self.globals['queues']['initialised'] = True
+
+        # define and start threads that will send messages to & receive messages from the lifx devices
+        self.globals['threads']['sendReceiveMessages'] = ThreadSendReceiveMessages([self.globals])
+        self.globals['threads']['sendReceiveMessages'].start()
+
+        self.globals['threads']['runConcurrentActive'] = True
+
+        if self.globals['polling']['status'] == True and self.globals['polling']['threadActive'] == False:
+            self.globals['threads']['polling']['event']  = threading.Event()
+            self.globals['threads']['polling']['thread'] = ThreadPolling([self.globals, self.globals['threads']['polling']['event']])
+            self.globals['threads']['polling']['thread'].start()
+
+        self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_LOW, 'DISCOVERY_DELAYED', []])
+ 
+        self.pluginConfigDefaultDurationDimBrighten = float(self.pluginPrefs.get("defaultDurationDimBrighten", 1.0))
+        self.pluginConfigDefaultDurationOn          = float(self.pluginPrefs.get("defaultDurationOn", 1.0))
+        self.pluginConfigDefaultODurationOff        = float(self.pluginPrefs.get("defaultDurationOff", 1.0))
+        self.pluginConfigDefaultOdurationColorWhite = float(self.pluginPrefs.get("defaultDurationColorWhite ", 1.0))
+
+        self.generalLogger.info(u"Autolog 'LIFX V4 Controller' initialization complete")
+        
+    def shutdown(self):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        if self.globals['polling']['threadActive'] == True:
+            self.globals['polling']['forceThreadEnd'] = True
+            self.globals['threads']['polling']['event'].set()  # Stop the Polling Thread
+
+        self.generalLogger.info(u"Autolog 'LIFX V4 Controller' Plugin shutdown complete")
+
+
+    def validatePrefsConfigUi(self, valuesDict):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        try: 
+
+            if "statusPolling" in valuesDict:
+                self.globals['polling']['status'] = bool(valuesDict["statusPolling"])
+            else:
+                self.globals['polling']['status'] = False
+
+            # No need to validate this as value can only be selected from a pull down list?
+
+            if "pollingSeconds" in valuesDict:
+                self.globals['polling']['seconds'] = float(valuesDict["pollingSeconds"])
+            else:
+                self.globals['polling']['seconds'] = float(300.0)  # Default to 5 minutes
+
+            if "missedPollLimit" in valuesDict:
+                try:
+                    self.globals['polling']['missedPollLimit'] = int(valuesDict["missedPollLimit"])
+                except:
+                    errorDict = indigo.Dict()
+                    errorDict["missedPollLimit"] = "Invalid number for missed polls limit"
+                    errorDict["showAlertText"] = "The number of missed polls limit must be specified as an integer e.g 2, 5 etc."
+                    return (False, valuesDict, errorDict)
+            else:
+                self.globals['polling']['missedPollLimit'] = int(360)  # Default to 6 minutes
+
+            if "defaultDurationDimBrighten" in valuesDict:
+                try:
+                    self.pluginConfigDefaultDurationDimBrighten = float(valuesDict["defaultDurationDimBrighten"])
+                except:
+                    errorDict = indigo.Dict()
+                    errorDict["defaultDurationDimBrighten"] = "Invalid number for seconds"
+                    errorDict["showAlertText"] = "The number of seconds must be specified as an integer or float e.g. 2, 2.0 or 2.5 etc."
+                    return (False, valuesDict, errorDict)
+            else:
+                self.pluginConfigDefaultDuration = float(1.0)  # Default to one second  
+
+
+            if "defaultDurationDimBrighten" in valuesDict:
+                try:
+                    self.pluginConfigDefaultDurationDimBrighten = float(valuesDict["defaultDurationDimBrighten"])
+                except:
+                    errorDict = indigo.Dict()
+                    errorDict["defaultDurationDimBrighten"] = "Invalid number for seconds"
+                    errorDict["showAlertText"] = "The number of seconds must be specified as an integer or float e.g. 2, 2.0 or 2.5 etc."
+                    return (False, valuesDict, errorDict)
+            else:
+                self.pluginConfigDefaultDuration = float(1.0)  # Default to one second  
+
+            if "defaultDurationOn" in valuesDict:
+                try:
+                    self.pluginConfigDefaultDurationOn = float(valuesDict["defaultDurationOn"])
+                except:
+                    errorDict = indigo.Dict()
+                    errorDict["defaultDurationOn"] = "Invalid number for seconds"
+                    errorDict["showAlertText"] = "The number of seconds must be specified as an integer or float e.g. 2, 2.0 or 2.5 etc."
+                    return (False, valuesDict, errorDict)
+            else:
+                self.pluginConfigDefaultDurationOn = float(1.0)  # Default to one second  
+
+            if "defaultDurationOff" in valuesDict:
+                try:
+                    self.pluginConfigDefaultDurationOff = float(valuesDict["defaultDurationOff"])
+                except:
+                    errorDict = indigo.Dict()
+                    errorDict["defaultDurationOff"] = "Invalid number for seconds"
+                    errorDict["showAlertText"] = "The number of seconds must be specified as an integer or float e.g. 2, 2.0 or 2.5 etc."
+                    return (False, valuesDict, errorDict)
+            else:
+                self.pluginConfigDefaultDurationOff = float(1.0)  # Default to one second  
+
+            if "defaultDurationColorWhite" in valuesDict:
+                try:
+                    self.pluginConfigDefaultdurationColorWhite = float(valuesDict["defaultDurationColorWhite"])
+                except:
+                    errorDict = indigo.Dict()
+                    errorDict["defaultDurationColorWhite"] = "Invalid number for seconds"
+                    errorDict["showAlertText"] = "The number of seconds must be specified as an integer or float e.g. 2, 2.0 or 2.5 etc."
+                    return (False, valuesDict, errorDict)
+            else:
+                self.pluginConfigDefaultdurationColorWhite = float(1.0)  # Default to one second  
+
+            return True
+
+        except StandardError, e:
+            self.generalLogger.error(u"validatePrefsConfigUi error detected. Line '%s' has error='%s'" % (sys.exc_traceback.tb_lineno, e))   
+            return True
+
+
+    def closedPrefsConfigUi(self, valuesDict, userCancelled):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        self.generalLogger.debug(u"'closePrefsConfigUi' called with userCancelled = %s" % (str(userCancelled)))  
+
+        if userCancelled == True:
+            return
+
+        # Check monitoring / debug / filered IP address options  
+        self.setDebuggingLevels(valuesDict)
+
+        # Following logic checks whether polling is required.
+        # If it isn't required, then it checks if a polling thread exists and if it does it ends it
+        # If it is required, then it checks if a pollling thread exists and 
+        #   if a polling thread doesn't exist it will create one as long as the start logic has completed and created a LIFX Command Queue.
+        #   In the case where a LIFX command queue hasn't been created then it means 'Start' is yet to run and so 
+        #   'Start' will create the polling thread. So this bit of logic is mainly used where polling has been turned off
+        #   after starting and then turned on again
+        # If polling is required and a polling thread exists, then the logic 'sets' an event to cause the polling thread to awaken and
+        #   update the polling interval
+
+        if self.globals['polling']['status'] == False:
+            if self.globals['polling']['threadActive'] == True:
+                self.globals['polling']['forceThreadEnd'] = True
+                self.globals['threads']['polling']['event'].set()  # Stop the Polling Thread
+                self.globals['threads']['polling']['thread'].join(5.0)  # Wait for up t0 5 seconds for it to end
+                del self.globals['threads']['polling']['thread']  # Delete thread so that it can be recreated if polling is turned on again
+        else:
+            if self.globals['polling']['threadActive'] == False:
+                if self.globals['queues']['initialised'] == True:
+                    self.globals['polling']['forceThreadEnd'] = False
+                    self.globals['threads']['polling']['event'] = threading.Event()
+                    self.globals['threads']['polling']['thread'] = ThreadPolling([self.globals, self.globals['threads']['polling']['event']])
+                    self.globals['threads']['polling']['thread'].start()
+            else:
+                self.globals['polling']['forceThreadEnd'] = False
+                self.globals['threads']['polling']['event'].set()  # cause the Polling Thread to update immediately with potentially new polling seconds value
+
+
+    def setDebuggingLevels(self, valuesDict):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        # set filered IP address
+
+        self.globals['debug']['debugFilteredIpAddressesUI'] = ''
+        if valuesDict.get("debugFilteredIpAddresses", '') != '':
+            self.globals['debug']['debugFilteredIpAddresses'] = valuesDict.get("debugFilteredIpAddresses", '').replace(' ', '').split(',')  # Create List of IP Addresses to filter on
+
+        if self.globals['debug']['debugFilteredIpAddresses']:  # Evaluates to True if list contains entries
+            for ipAddress in self.globals['debug']['debugFilteredIpAddresses']:
+                if self.globals['debug']['debugFilteredIpAddressesUI'] == '':
+                    self.globals['debug']['debugFilteredIpAddressesUI'] += ipAddress
+                else:
+                    self.globals['debug']['debugFilteredIpAddressesUI'] += ', ' + ipAddress
+                    
+            if len(self.globals['debug']['debugFilteredIpAddresses']) == 1:    
+                self.generalLogger.warning(u"Filtering on LIFX Device with IP Address: %s" % (self.globals['debug']['debugFilteredIpAddressesUI']))
+            else:  
+                self.generalLogger.warning(u"Filtering on LIFX Devices with IP Addresses: %s" % (self.globals['debug']['debugFilteredIpAddressesUI']))  
+
+        self.globals['debug']['monitorDebugEnabled'] = bool(valuesDict.get("monitorDebugEnabled", False))
+
+        self.globals['debug']['debugGeneral']       = logging.INFO  # For general debugging of the main thread
+        self.globals['debug']['monitorSendReceive'] = logging.INFO  # For logging messages sent & Received to/from LIFX devices
+        self.globals['debug']['debugSendReceive']   = logging.INFO  # For debugging messages sent & Received to/from LIFX devices
+        self.globals['debug']['debugMethodTrace']   = logging.INFO  # For displaying method invocations i.e. trace method
+        self.globals['debug']['debugPolling']       = logging.INFO  # For polling debugging
+
+        if self.globals['debug']['monitorDebugEnabled'] == False:
+            self.plugin_file_handler.setLevel(logging.INFO)
+        else:
+            self.plugin_file_handler.setLevel(logging.THREADDEBUG)
+
+        debugGeneral           = bool(valuesDict.get("debugGeneral", False))
+        monitorSendReceive     = bool(valuesDict.get("monitorSendReceive", False))
+        debugSendReceive       = bool(valuesDict.get("debugSendReceive", False))
+        debugMethodTrace       = bool(valuesDict.get("debugMethodTrace", False))
+        debugPolling           = bool(valuesDict.get("debugPolling", False))
+
+        if debugGeneral:
+            self.globals['debug']['debugGeneral'] = logging.DEBUG  # For general debugging of the main thread
+            self.generalLogger.setLevel(self.globals['debug']['debugGeneral'])
+        if monitorSendReceive:
+            self.globals['debug']['monitorSendReceive'] = logging.DEBUG  # For logging messages sent to LIFX lamps 
+        if debugSendReceive:
+            self.globals['debug']['debugSendReceive'] = logging.DEBUG  # For debugging messages sent to LIFX lamps
+        if debugMethodTrace:
+            self.globals['debug']['debugMethodTrace'] = logging.THREADDEBUG  # For displaying method invocations i.e. trace method
+        if debugPolling:
+            self.globals['debug']['debugPolling'] = logging.DEBUG  # For polling debugging
+
+        self.globals['debug']['monitoringActive'] = monitorSendReceive
+
+        self.globals['debug']['debugActive'] = debugGeneral or debugSendReceive or debugMethodTrace or debugPolling
+
+        if not self.globals['debug']['monitorDebugEnabled'] or (not self.globals['debug']['monitoringActive'] and not self.globals['debug']['debugActive']):
+            self.generalLogger.info(u"No monitoring or debugging requested")
+        else:
+            if not self.globals['debug']['monitoringActive']:
+                self.generalLogger.info(u"No monitoring requested")
+            else:
+                monitorTypes = []
+                if monitorSendReceive:
+                    monitorTypes.append('Send & Receive')
+                message = self.listActive(monitorTypes)   
+                self.generalLogger.warning(u"Monitoring enabled for LIFX: %s" % (message))  
+
+            if not self.globals['debug']['debugActive']:
+                self.generalLogger.info(u"No debugging requested")
+            else:
+                debugTypes = []
+                if debugGeneral:
+                    debugTypes.append('General')
+                if debugSendReceive:
+                    debugTypes.append('Send & Receive')
+                if debugMethodTrace:
+                    debugTypes.append('Method Trace')
+                if debugPolling:
+                    debugTypes.append('Polling')
+                message = self.listActive(debugTypes)   
+                self.generalLogger.warning(u"Debugging enabled for LIFX: %s" % (message))  
+
+    def listActive(self, monitorDebugTypes):            
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        loop = 0
+        listedTypes = ''
+        for monitorDebugType in monitorDebugTypes:
+            if loop == 0:
+                listedTypes = listedTypes + monitorDebugType
+            else:
+                listedTypes = listedTypes + ', ' + monitorDebugType
+            loop += 1
+        return listedTypes
+
+    def runConcurrentThread(self):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        # This thread is used to detect plugin close down only
+        try:
+            while True:
+                self.sleep(60) # in seconds
+        except self.StopThread:
+            self.generalLogger.info(u"Autolog 'LIFX V4 Controller' Plugin shutdown requested")
+
+            self.generalLogger.debug(u"runConcurrentThread being ended . . .") 
+
+            if 'sendReceiveMessages' in self.globals['threads']:
+                self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_STOP_THREAD, 'STOPTHREAD', []])
+
+            # Cancel any existing timers
+            for lifxDevId in self.globals['deviceTimers']:
+                for timer in self.globals['deviceTimers'][lifxDevId]:
+                    self.globals['deviceTimers'][lifxDevId][timer].cancel()
+
+            if 'DISCOVERY' in self.globals['discoveryTimer']:
+                self.globals['discoveryTimer']['DISCOVERY'].cancel()
+
+            if self.globals['polling']['threadActive'] == True:
+                self.globals['polling']['forceThreadEnd'] = True
+                self.globals['threads']['polling']['event'].set()  # Stop the Polling Thread
+                self.globals['threads']['polling']['thread'].join(7.0)  # wait for thread to end
+                self.generalLogger.debug(u"Polling thread now stopped")
+
+            if 'sendReceiveMessages' in self.globals['threads']:
+                self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_STOP_THREAD, 'STOPTHREAD', []])
+                self.globals['threads']['sendReceiveMessages'].join(7.0)  # wait for thread to end
+                self.generalLogger.debug(u"SendReceive thread now stopped")
+
+        self.generalLogger.debug(u". . . runConcurrentThread now ended")   
+
+    def deviceStartComm(self, dev):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        try:
+            self.generalLogger.info(u"Starting  '%s' . . . " % (dev.name))
+
+            if dev.deviceTypeId != "lifxDevice":
+                self.generalLogger.error(u"Failed to start LIFX device [%s]: Device type [%s] not known by plugin." % (dev.name, dev.deviceTypeId))
+                return
+
+            dev.stateListOrDisplayStateIdChanged()  # Ensure latest devices.xml is being used
+
+            # Cancel any existing timers
+            if dev.id in self.globals['deviceTimers']:
+                for timer in self.globals['deviceTimers'][dev.id]:
+                    self.globals['deviceTimers'][dev.id][timer].cancel()
+
+            # Initialise LIFX Device Timers dictionary
+            self.globals['deviceTimers'][dev.id] = {}
+
+            # Initialise internal to plugin lifx lamp states to default values
+
+
+            if (len(self.globals['debug']['debugFilteredIpAddresses']) > 0) and (dev.states['ipAddress'] not in self.globals['debug']['debugFilteredIpAddresses']):
+                self.generalLogger.info(u"Start NOT completed for  '%s' - IP Address has been filtered out" % (dev.name))
+                return
+
+            if dev.id not in self.globals['lifx']:
+                self.globals['lifx'][dev.id] = {}
+                self.globals['lifx'][dev.id]['mac_addr']            = dev.address         # eg. 'd0:73:d5:0a:bc:de'
+                self.globals['lifx'][dev.id]['lifxLanLightObject']  = None
+
+                for lifxDevice in self.globals['lifxDevices']:
+                    lifxDeviceMacAddr = lifxDevice.mac_addr
+                    lifxDeviceIpAddress = lifxDevice.ip_addr
+                    if dev.address == lifxDevice.mac_addr:
+                        self.globals['lifx'][dev.id]['lifxLanLightObject'] = Light(lifxDeviceMacAddr, lifxDeviceIpAddress)
+
+            self.globals['lifx'][dev.id]['started']                  = False
+            self.globals['lifx'][dev.id]['datetimeStarted']          = indigo.server.getTime()
+            self.globals['lifx'][dev.id]['initialisedFromlamp']      = False
+            self.globals['lifx'][dev.id]['lastResponseToPollCount']  = 0
+
+            if self.globals['lifx'][dev.id]['lifxLanLightObject'] == None:
+                self.globals['lifx'][dev.id]['ipAddress'] = dev.states['ipAddress']  # if LIFX device not found - default to existing value
+                self.globals['lifx'][dev.id]['port'] = dev.states['port']                
+            else:
+                self.globals['lifx'][dev.id]['ipAddress']            = self.globals['lifx'][dev.id]['lifxLanLightObject'].ip_addr  # e.g. 192.168.1.nnn
+                self.globals['lifx'][dev.id]['port']                 = self.globals['lifx'][dev.id]['lifxLanLightObject'].port  # e.g. 56700
+
+            # self.globals['lifx'][dev.id]['label']                    = dev.name
+            self.globals['lifx'][dev.id]['onState']                  = False      # True or False
+            self.globals['lifx'][dev.id]['onOffState']               = 'off'      # 'on' or 'off'
+
+            hsbk = (0,0,0,3500)
+
+            self.globals['lifx'][dev.id]['hsbkHue']                  = hsbk[0]     # Value between 0 and 65535
+            self.globals['lifx'][dev.id]['hsbkSaturation']           = hsbk[1]     # Value between 0 and 65535 (e.g. 20% = 13107)
+            self.globals['lifx'][dev.id]['hsbkBrightness']           = hsbk[2]     # Value between 0 and 65535
+            self.globals['lifx'][dev.id]['hsbkKelvin']               = hsbk[3]  # Value between 2500 and 9000
+            self.globals['lifx'][dev.id]['powerLevel']               = 0     # Value between 0 and 65535 
+
+            self.globals['lifx'][dev.id]['groupLabel']               = ''
+            self.globals['lifx'][dev.id]['locationLabel']            = ''
+
+            self.globals['lifx'][dev.id]['whenLastOnHsbkHue']        = int(0)    # Value between 0 and 65535
+            self.globals['lifx'][dev.id]['whenLastOnHsbkSaturation'] = int(0)    # Value between 0 and 65535 (e.g. 20% = 13107)
+            self.globals['lifx'][dev.id]['whenLastOnHsbkBrightness'] = int(0)    # Value between 0 and 65535
+            self.globals['lifx'][dev.id]['whenLastOnHsbkKelvin']     = int(3500) # Value between 2500 and 9000
+            self.globals['lifx'][dev.id]['whenLastOnPowerLevel']     = int(0)    # Value between 0 and 65535 
+
+            self.globals['lifx'][dev.id]['indigoRed']                = float(0)  # Value between 0.0 and 100.0
+            self.globals['lifx'][dev.id]['indigoGreen']              = float(0)  # Value between 0.0 and 100.0
+            self.globals['lifx'][dev.id]['indigoBlue']               = float(0)  # Value between 0.0 and 100.0
+
+            self.globals['lifx'][dev.id]['indigoHue']                = float(0)  # Value between 0.0 and 360.0
+            self.globals['lifx'][dev.id]['indigoSaturation']         = float(0)  # Value between 0.0 and 100.0
+            self.globals['lifx'][dev.id]['indigoBrightness']         = float(0)  # Value between 0.0 and 100.0
+            self.globals['lifx'][dev.id]['indigoKelvin']             = float(3500) # Value between 2500 & 9000
+            self.globals['lifx'][dev.id]['indigoPowerLevel']         = float(0)  # Value between 0.0 and 100.0
+            self.globals['lifx'][dev.id]['indigoWhiteLevel']         = float(0)  # Value between 0.0 and 100.0
+
+            self.globals['lifx'][dev.id]['duration'] = float(1.0)
+            if dev.pluginProps.get('overrideDefaultPluginDurations', False):
+                self.globals['lifx'][dev.id]['durationDimBrighten'] = float(dev.pluginProps.get('defaultDurationDimBrighten', self.pluginConfigDefaultDurationDimBrighten))
+                self.globals['lifx'][dev.id]['durationOn']          = float(dev.pluginProps.get('defaultDurationOn', self.pluginConfigDefaultDurationOn))
+                self.globals['lifx'][dev.id]['durationOff']         = float(dev.pluginProps.get('defaultDurationOff', self.pluginConfigDefaultDurationOff))
+                self.globals['lifx'][dev.id]['durationColorWhite']  = float(dev.pluginProps.get('defaultDurationColorWhite', self.pluginConfigDefaultdurationColorWhite))
+
+            else:
+                self.globals['lifx'][dev.id]['durationDimBrighten'] = float(self.pluginConfigDefaultDurationDimBrighten)
+                self.globals['lifx'][dev.id]['durationOn']          = float(self.pluginConfigDefaultDurationOn)
+                self.globals['lifx'][dev.id]['durationOff']         = float(self.pluginConfigDefaultDurationOff)
+                self.globals['lifx'][dev.id]['durationColorWhite']  = float(self.pluginConfigDefaultdurationColorWhite)
+
+            # variables for holding SETLAMP command values
+            self.globals['lifx'][dev.id]['lampTarget'] = {}                    # Target states
+            self.globals['lifx'][dev.id]['lampTarget']['active']     = False     
+            self.globals['lifx'][dev.id]['lampTarget']['hue']        = '0.0'   # Value between 0.0 and 65535.0
+            self.globals['lifx'][dev.id]['lampTarget']['saturation'] = '0.0'   # Value between 0.0 and 65535.0
+            self.globals['lifx'][dev.id]['lampTarget']['kelvin']     = '3500'  # Value between 2500 and 9000
+            self.globals['lifx'][dev.id]['lampTarget']['brightness'] = '0'     # Value between 0 and 100
+            self.globals['lifx'][dev.id]['lampTarget']['duration']   = '0.0'
+
+            keyValueList = [
+                {'key': 'lifxOnState', 'value': self.globals['lifx'][dev.id]['onState']},
+                {'key': 'lifxOnOffState', 'value': self.globals['lifx'][dev.id]['onOffState']},
+
+                {'key': 'hsbkHue', 'value': self.globals['lifx'][dev.id]['hsbkHue']},
+                {'key': 'hsbkSaturation', 'value': self.globals['lifx'][dev.id]['hsbkSaturation']},
+                {'key': 'hsbkBrightness', 'value': self.globals['lifx'][dev.id]['hsbkBrightness']},
+                {'key': 'hsbkKelvin', 'value': self.globals['lifx'][dev.id]['hsbkKelvin']},
+                {'key': 'powerLevel', 'value': self.globals['lifx'][dev.id]['powerLevel']},
+                {'key': 'ipAddress', 'value': self.globals['lifx'][dev.id]['ipAddress']},
+                {'key': 'port', 'value': self.globals['lifx'][dev.id]['port']},
+
+                {'key': 'groupLabel', 'value': self.globals['lifx'][dev.id]['groupLabel']},
+                {'key': 'locationLabel', 'value': self.globals['lifx'][dev.id]['locationLabel']},
+
+                {'key': 'whenLastOnHsbkHue', 'value': self.globals['lifx'][dev.id]['whenLastOnHsbkHue']},
+                {'key': 'whenLastOnHsbkSaturation', 'value': self.globals['lifx'][dev.id]['whenLastOnHsbkSaturation']},
+                {'key': 'whenLastOnHsbkBrightness', 'value': self.globals['lifx'][dev.id]['whenLastOnHsbkBrightness']},
+                {'key': 'whenLastOnHsbkKelvin', 'value': self.globals['lifx'][dev.id]['whenLastOnHsbkKelvin']},
+                {'key': 'whenLastOnPowerLevel', 'value': self.globals['lifx'][dev.id]['whenLastOnPowerLevel']},
+
+                {'key': 'indigoHue', 'value': self.globals['lifx'][dev.id]['indigoHue']},
+                {'key': 'indigoSaturation', 'value': self.globals['lifx'][dev.id]['indigoSaturation']},
+                {'key': 'indigoBrightness', 'value': self.globals['lifx'][dev.id]['indigoBrightness']},
+                {'key': 'indigoKelvin', 'value': self.globals['lifx'][dev.id]['indigoKelvin']},
+                {'key': 'indigoPowerLevel', 'value': self.globals['lifx'][dev.id]['indigoPowerLevel']},
+
+                {'key': 'redLevel', 'value': self.globals['lifx'][dev.id]['indigoRed']},
+                {'key': 'greenLevel', 'value': self.globals['lifx'][dev.id]['indigoGreen']},
+                {'key': 'blueLevel', 'value': self.globals['lifx'][dev.id]['indigoBlue']},
+                {'key': 'whiteTemperature', 'value': self.globals['lifx'][dev.id]['indigoKelvin']},
+                {'key': 'whiteLevel', 'value': self.globals['lifx'][dev.id]['indigoBrightness']},
+
+                {'key': 'duration', 'value': self.globals['lifx'][dev.id]['duration']},
+                {'key': 'durationDimBrighten', 'value': self.globals['lifx'][dev.id]['durationDimBrighten']},
+                {'key': 'durationOn', 'value': self.globals['lifx'][dev.id]['durationOn']},
+                {'key': 'durationOff', 'value': self.globals['lifx'][dev.id]['durationOff']},
+                {'key': 'durationColorWhite', 'value': self.globals['lifx'][dev.id]['durationColorWhite']},
+                {'key': 'connected', 'value': False}
+
+            ]
+            dev.updateStatesOnServer(keyValueList)
+
+            if self.globals['lifx'][dev.id]['lifxLanLightObject'] == None:
+                self.generalLogger.info(u". . . Unable to connect to '%s' as no corresponding LIFX device discovered on the network." % (dev.name))
+                indigo.devices[dev.id].setErrorStateOnServer(u"no ack")
+            else:                
+                dev.updateStateImageOnServer(indigo.kStateImageSel.TimerOn)
+                self.globals['lifx'][dev.id]["started"] = True
+                self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_STATUS_MEDIUM, 'STATUS', [dev.id]])
+                self.generalLogger.info(u". . . Started '%s' " % (dev.name))
+
+            self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_LOW, 'GETVERSION', [dev.id]])
+            self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_LOW, 'GETHOSTFIRMWARE', [dev.id]])
+            self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_LOW, 'GETWIFIFIRMWARE', [dev.id]])
+            self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_LOW, 'GETWIFIINFO', [dev.id]])
+
+        except StandardError, e:
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            self.generalLogger.error(u"deviceStartComm: StandardError detected for '%s' at line '%s' = %s" % (dev.name, exc_tb.tb_lineno,  e))   
+
+
+    def deviceStopComm(self, dev):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        self.generalLogger.info(u"Stopping '%s'" % (dev.name))
+
+        dev.setErrorStateOnServer(u"no ack")  # Default to 'no ack' status
+
+        self.globals['lifx'][dev.id]["started"] = False
+
+        # Cancel any existing timers
+        if dev.id in self.globals['deviceTimers']:
+            for timer in self.globals['deviceTimers'][dev.id]:
+                self.globals['deviceTimers'][dev.id][timer].cancel()
+
+    def deviceUpdated(self, origDev, newDev):
+
+        if origDev.deviceTypeId == 'lifxDevice' and newDev.deviceTypeId == 'lifxDevice':
+            #  self.methodTracer.threaddebug(u"CLASS: Plugin")  # Disabled as too many log messages!  
+            if origDev.name != newDev.name: 
+                if bool(newDev.pluginProps.get('setLifxLabelFromIndigoDeviceName', False)) == True:  # Only change LIFX Lamp label if option set
+                    self.generalLogger.info(u"Changing LIFX Lamp label from '%s' to '%s'" % (origDev.name, newDev.name))
+                    self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'SETLABEL', [newDev.id]])
+        indigo.PluginBase.deviceUpdated(self, origDev, newDev)
+
+        return  
+
+    def validateDeviceConfigUi(self, valuesDict, typeId, devId):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        self.currentTime = indigo.server.getTime()
+
+        self.validateDeviceFlags[devId] = {}
+
+        if "overrideDefaultPluginDurations" in valuesDict and valuesDict["overrideDefaultPluginDurations"] == True:
+
+            # Validate 'defaultDurationDimBrighten' value
+            self.validateDeviceFlags[devId]['defaultDurationDimBrighten'] = True  # False = Invalid, True = Valid
+            defaultDurationDimBrighten = valuesDict["defaultDurationDimBrighten"].rstrip().lstrip()
+            if defaultDurationDimBrighten != "":
+                try:
+                    self.validateField = float(defaultDurationDimBrighten)
+                    if self.validateField < 0.0 or self.validateField > 3600.0:
+                        self.validateDeviceFlags[devId]['defaultDurationDimBrighten'] = False  # Not in valid range
+                except:
+                    self.validateDeviceFlags[devId]['defaultDurationDimBrighten'] = False   # Not numeric
+
+                if self.validateDeviceFlags[devId]['defaultDurationDimBrighten'] == False:
+                    errorDict = indigo.Dict()
+                    errorDict["defaultDurationDimBrighten"] = "Default duration for dimming and brightness must be set between 0.0 and 3600 (inclusive)"
+                    errorDict["showAlertText"] = "You must enter a valid Default Duration for dimming and brightness value for the LIFX lamp. It must be a number between 0.0 and 3600 (inclusive)"
+                    return (False, valuesDict, errorDict)
+                else:
+                    valuesDict["defaultDurationDimBrighten"] = defaultDurationDimBrighten 
+
+            # Validate 'defaultDurationOn' value
+            self.validateDeviceFlags[devId]['defaultDurationOn'] = True  # False = Invalid, True = Valid
+            defaultDurationOn = valuesDict["defaultDurationOn"].rstrip().lstrip()
+            if defaultDurationOn != "":
+                try:
+                    self.validateField = float(defaultDurationOn)
+                    if self.validateField < 0.0 or self.validateField > 3600.0:
+                        self.validateDeviceFlags[devId]['defaultDurationOn'] = False  # Not in valid range
+                except:
+                    self.validateDeviceFlags[devId]['defaultDurationOn'] = False   # Not numeric
+
+                if self.validateDeviceFlags[devId]['defaultDurationOn'] == False:
+                    errorDict = indigo.Dict()
+                    errorDict["defaultDurationOn"] = "Default Turn On duration must be set between 0.0 and 3600 (inclusive)"
+                    errorDict["showAlertText"] = "You must enter a valid Default Turn On Duration value for the LIFX lamp. It must be a number between 0.0 and 3600 (inclusive)"
+                    return (False, valuesDict, errorDict)
+                else:
+                    valuesDict["defaultDurationOn"] = defaultDurationOn
+
+            # Validate 'defaultDurationOff' value
+            self.validateDeviceFlags[devId]['defaultDurationOff'] = True  # False = Invalid, True = Valid
+            defaultDurationOff = valuesDict["defaultDurationOff"].rstrip().lstrip()
+            if defaultDurationOff != "":
+                try:
+                    self.validateField = float(defaultDurationOff)
+                    if self.validateField < 0.0 or self.validateField > 3600.0:
+                        self.validateDeviceFlags[devId]['defaultDurationOff'] = False  # Not in valid range
+                except:
+                    self.validateDeviceFlags[devId]['defaultDurationOff'] = False   # Not numeric
+
+                if self.validateDeviceFlags[devId]['defaultDurationOff'] == False:
+                    errorDict = indigo.Dict()
+                    errorDict["defaultDurationOff"] = "Default Turn Off duration must be set between 0.0 and 3600 (inclusive)"
+                    errorDict["showAlertText"] = "You must enter a valid Default Turn Off Duration value for the LIFX lamp. It must be a number between 0.0 and 3600 (inclusive)"
+                    return (False, valuesDict, errorDict)
+                else:
+                    valuesDict["defaultDurationOff"] = defaultDurationOff
+
+            # Validate 'defaultDurationColorWhite ' value
+            self.validateDeviceFlags[devId]['defaultDurationColorWhite'] = True  # False = Invalid, True = Valid
+            defaultDurationColorWhite = valuesDict["defaultDurationColorWhite"].rstrip().lstrip()
+            if defaultDurationColorWhite != "":
+                try:
+                    self.validateField = float(defaultDurationColorWhite)
+                    if self.validateField < 0.0 or self.validateField > 3600.0:
+                        self.validateDeviceFlags[devId]['defaultDurationColorWhite'] = False  # Not in valid range
+                except:
+                    self.validateDeviceFlags[devId]['defaultDurationColorWhite'] = False   # Not numeric
+
+                if self.validateDeviceFlags[devId]['defaultDurationColorWhite'] == False:
+                    errorDict = indigo.Dict()
+                    errorDict["defaultDurationColorWhite"] = "Default Set Color/White duration must be set between 0.0 and 3600 (inclusive)"
+                    errorDict["showAlertText"] = "You must enter a valid Default Set Color/White Duration value for the LIFX lamp. It must be a number between 0.0 and 3600 (inclusive)"
+                    return (False, valuesDict, errorDict)
+                else:
+                    valuesDict["defaultDurationColorWhite"] = defaultDurationColorWhite
+
+        self.validateDeviceFlags.clear()
+ 
+        return (True, valuesDict)
+
+
+    def getActionConfigUiValues(self, pluginProps, typeId, actionId):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        self.generalLogger.debug(u"getActionConfigUiValues: typeId [%s], actionId [%s], pluginProps[%s]" % (typeId, actionId, pluginProps))
+
+        errorDict = indigo.Dict()
+        valuesDict = pluginProps
+
+        if typeId == "setColorWhite":  # <Action id="setColorWhite" deviceFilter="self.lifxDevice">
+
+            valuesDict["option"] = 'SELECT_OPTION'
+            valuesDict["optionPresetList"] = 'SELECT_PRESET'
+
+            if 'actionType' not in valuesDict:
+                valuesDict["actionType"] = 'SELECT_ACTION_TYPE'
+            if 'turnOnifOffStandard' not in valuesDict:
+                valuesDict["turnOnifOffStandard"] = True
+            if 'modeStandard' not in valuesDict:
+                valuesDict["modeStandard"] = 'SELECT_COLOR_OR_WHITE'
+            if 'hueStandard' not in valuesDict:
+                valuesDict["hueStandard"] = ''
+            if 'saturationStandard' not in valuesDict:
+                valuesDict["saturationStandard"] = ''
+            if 'kelvinStandard' not in valuesDict:
+                valuesDict["kelvinStandard"] = 'NONE'
+            if 'brightnessStandard' not in valuesDict:
+                valuesDict["brightnessStandard"] = ''
+            if 'durationStandard' not in valuesDict:
+                valuesDict["durationStandard"] = ''
+            if 'modeWaveform' not in valuesDict:
+                valuesDict["modeWaveform"] = 'SELECT_COLOR_OR_WHITE'
+            if 'hueWaveform' not in valuesDict:
+                valuesDict["hueWaveform"] = ''
+            if 'saturationWaveform' not in valuesDict:
+                valuesDict["saturationWaveform"] = ''
+            if 'kelvinWaveform' not in valuesDict:
+                valuesDict["kelvinWaveform"] = 'NONE'
+            if 'brightnessWaveform' not in valuesDict:
+                valuesDict["brightnessWaveform"] = ''
+            if 'transientWaveform' not in valuesDict:
+                valuesDict["transientWaveform"] = True
+            if 'periodWaveform' not in valuesDict:
+                valuesDict["periodWaveform"] = ''
+            if 'cyclesWaveform' not in valuesDict:
+                valuesDict["cyclesWaveform"] = ''
+            if 'dutyCycleWaveform' not in valuesDict:
+                valuesDict["dutyCycleWaveform"] = '0'  # Equal Time on Both
+            if 'typeWaveform' not in valuesDict:
+                valuesDict["typeWaveform"] = '0'  # Saw
+ 
+            valuesDict["selectedPresetOption"] = 'NONE'
+            valuesDict["resultPreset"] = 'resultNa'
+
+            valuesDict = self.actionConfigOptionSelected(valuesDict, typeId, actionId)
+
+            if 'actionType' in valuesDict:
+                if valuesDict["actionType"] == 'Standard':
+                    if 'modeStandard' in valuesDict:
+                        if valuesDict["modeStandard"] == 'Color':
+                            valuesDict, errorDict = self.hueSaturationBrightnessStandardUpdated(valuesDict, typeId, actionId)
+                        elif valuesDict["modeStandard"] == 'White': 
+                            valuesDict, errorDict = self.kelvinStandardUpdated(valuesDict, typeId, actionId)
+                elif  valuesDict["actionType"] == 'Waveform':
+                    if 'modeWaveform' in valuesDict:
+                        if valuesDict["modeWaveform"] == 'Color':
+                            valuesDict, errorDict = self.hueSaturationBrightnessWaveformUpdated(valuesDict, typeId, actionId)
+                        elif valuesDict["modeWaveform"] == 'White': 
+                            valuesDict, errorDict = self.kelvinWaveformUpdated(valuesDict, typeId, actionId)
+
+        return (valuesDict, errorDict)
+
+
+    def colorPickerUpdated(self, valuesDict, typeId, devId):
+        if valuesDict["actionType"] == 'Standard':
+            rgbHexList = valuesDict["colorStandardColorpicker"].split()
+
+            # Convert color picker values for RGB (x00-xFF100) to colorSys values (0.0-1.0)
+            red   = float(int(rgbHexList[0], 16) / 255.0)
+            green = float(int(rgbHexList[1], 16) / 255.0)
+            blue  = float(int(rgbHexList[2], 16) / 255.0)
+
+            hsv_hue, hsv_saturation, hsv_brightness = colorsys.rgb_to_hsv(red, green, blue)
+
+            # Convert colorsys values for HSV (0.0-1.0) to H (0-360), S (0.0-100.0) and V aka B (0.0-100.0) 
+            valuesDict["hueStandard"] = '%s' % int(hsv_hue * 360.0)
+            valuesDict["saturationStandard"] = '%s' % int(hsv_saturation * 100.0)
+            valuesDict["brightnessStandard"] = '%s' % int(hsv_brightness * 100.0)
+        elif valuesDict["actionType"] == 'Waveform':
+            rgbHexList = valuesDict["colorWaveformColorpicker"].split()
+
+            # Convert color picker values for RGB (x00-xFF100) to colorSys values (0.0-1.0)
+            red   = float(int(rgbHexList[0], 16) / 255.0)
+            green = float(int(rgbHexList[1], 16) / 255.0)
+            blue  = float(int(rgbHexList[2], 16) / 255.0)
+
+            hsv_hue, hsv_saturation, hsv_brightness = colorsys.rgb_to_hsv(red, green, blue)
+
+            # Convert colorsys values for HSV (0.0-1.0) to H (0-360), S (0.0-100.0) and V aka B (0.0-100.0) 
+            valuesDict["hueWaveform"] = '%s' % int(hsv_hue * 360.0)
+            valuesDict["saturationWaveform"] = '%s' % int(hsv_saturation * 100.0)
+            valuesDict["brightnessWaveform"] = '%s' % int(hsv_brightness * 100.0)
+
+        return (valuesDict)
+
+
+    def validateActionConfigUi(self, valuesDict, typeId, actionId):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        errorsDict = indigo.Dict()
+
+        if typeId == "setColorWhite":
+            validateResult = self.validateActionConfigUiSetColorWhite(valuesDict, typeId, actionId)
+        else:
+            self.generalLogger.debug(u"validateActionConfigUi [UNKNOWN]: typeId=[%s], actionId=[%s]" % (typeId, actionId))
+            return (True, valuesDict)
+
+        if validateResult[0] == True:
+            return (True, validateResult[1])
+        else:
+            return (False, validateResult[1], validateResult[2])
+
+ 
+    def validateActionConfigUiSetColorWhite(self, valuesDict, typeId, actionId):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        self.generalLogger.debug(u"validateActionConfigUiSetColorWhite: typeId=[%s], actionId=[%s]" % (typeId, actionId))
+
+       # validate LIFX ActionType
+        actionType = valuesDict["actionType"]
+        if actionType != "Standard" and actionType != "Waveform":
+            errorDict = indigo.Dict()
+            errorDict["actionType"] = "LIFX Action must be set to one of 'Standard' or 'Waveform'"
+            errorDict["showAlertText"] = "You must select a valid LIFX Action; either 'Standard' or 'Waveform'"
+            return (False, valuesDict, errorDict)
+
+        if actionType == 'Standard':
+            # Validation for LIFX ActionType 'Waveform'
+
+            valueCount = 0  # To count number of fields entered for consistency check
+
+            # validate modeStandard
+            modeStandard = valuesDict["modeStandard"]
+            if modeStandard != "Color" and modeStandard != "White":
+                errorDict = indigo.Dict()
+                errorDict["modeStandard"] = "Color / White selection must be set to one of 'Color' or 'White'"
+                errorDict["showAlertText"] = "YColor / White selection must be set to one of 'Color' or 'White'"
+                return (False, valuesDict, errorDict)
+
+            if modeStandard == "Color":
+                # Validate 'hueStandard' value
+                hueStandard = valuesDict["hueStandard"].rstrip().lstrip()  # Remove leading/trailing spaces
+                if hueStandard == '' or hueStandard == '-':
+                    valuesDict["hueStandard"] = '-'
+                else:
+                    try:
+                        hueStandard = '%.1f' % float(hueStandard)
+                        if float(hueStandard) < 0.0:
+                            raise ValueError('Hue must be a positive number')
+                        if float(hueStandard) < 0.0 or float(hueStandard) > 360.0:
+                            raise ValueError('Hue must be set between 0.0 and 360.0 (inclusive)')
+                        valuesDict["hueStandard"] = hueStandard
+                        valueCount += 1  # At least one of the required fields now entered
+                    except:
+                        errorDict = indigo.Dict()
+                        errorDict["hueStandard"] = "Hue must be set between 0.0 and 360.0 (inclusive) or '-' (dash) to not set value"
+                        errorDict["showAlertText"] = "You must enter a valid Hue value for the LIFX device. It must be a value between 0.0 and 360.0 (inclusive) or '-' (dash) to leave an existing value unchanged"
+                        return (False, valuesDict, errorDict)
+
+            if modeStandard == "Color":
+                # Validate 'saturationStandard' value
+                saturationStandard = valuesDict["saturationStandard"].rstrip().lstrip()
+                if saturationStandard == '' or saturationStandard == '-':
+                    valuesDict["saturationStandard"] = '-'
+                else:
+                    try:
+                        saturationStandard = '%.1f' % float(saturationStandard)
+                        if float(saturationStandard) < 0.0 or float(saturationStandard) > 100.0:
+                            raise ValueError('Saturation must be set between 0.0 and 100.0 (inclusive)')
+                        valuesDict["saturationStandard"] = saturationStandard
+                        valueCount += 1  # At least one of the required fields now entered
+                    except:
+                        errorDict = indigo.Dict()
+                        errorDict["saturationStandard"] = "Saturation must be set between 0.0 and 100.0 (inclusive) or '-' (dash) to not set value"
+                        errorDict["showAlertText"] = "You must enter a valid Saturation value for the LIFX device. It must be a value between 0.0 and 100.0 (inclusive) or '-' (dash) to leave an existing value unchanged"
+                        return (False, valuesDict, errorDict)
+
+            if modeStandard == "White":
+                # Validate 'kelvinStandard' value
+                kelvinStandard = valuesDict["kelvinStandard"]
+                if kelvinStandard == '-': 
+                    pass
+                else:
+                    try:
+                        kelvinStandard = int(kelvinStandard)  # Extract Kelvin value from description
+                        if kelvinStandard < 2500 or kelvinStandard > 9000:
+                            raise ValueError('Kelvin must be set between 2500 and 9000 (inclusive)')
+                        #valuesDict["kelvinStandard"] = kelvinStandard
+                        valueCount += 1  # At least one of the required fields now entered
+                    except:
+                        errorDict = indigo.Dict()
+                        errorDict["kelvinStandard"] = "Kelvin must be set to one of the presets between 2500 and 9000 (inclusive) or to 'Use current Kelvin value' to leave the existing value unchanged"
+                        errorDict["showAlertText"] = "You must select a valid Kelvin value for the LIFX device or to 'Use current Kelvin value' to leave the existing value unchanged"
+                        return (False, valuesDict, errorDict)
+
+           # Validate 'brightnessStandard' value
+            brightnessStandard = valuesDict["brightnessStandard"].rstrip().lstrip()
+            if brightnessStandard == '' or brightnessStandard == '-':
+                valuesDict["brightnessStandard"] = '-'
+            else:
+                try:
+                    brightnessStandard = '%.1f' % float(brightnessStandard)
+                    if float(brightnessStandard) < 0.0 or float(brightnessStandard) > 100.0:
+                        raise ValueError('Brightness must be set between 0.0 and 100.0 (inclusive)')
+                    valuesDict["brightnessStandard"] = brightnessStandard
+                    valueCount += 1  # At least one of the required fields now entered
+                except:
+                    errorDict = indigo.Dict()
+                    errorDict["brightnessStandard"] = "Brightness must be set between 0.0 and 100.0 (inclusive) or '-' (dash) to not set value"
+                    errorDict["showAlertText"] = "You must enter a valid Brightness value for the LIFX device. It must be a value between 0.0 and 100.0 (inclusive) or '-' (dash) to leave an existing value unchanged"
+                    return (False, valuesDict, errorDict)
+
+            # Validate 'durationStandard' value
+            durationStandard = valuesDict["durationStandard"].rstrip().lstrip()
+            if durationStandard == '' or durationStandard == '-':
+                durationStandard = '-'
+            else:
+                try:
+                    durationStandard = '%.1f' % float(durationStandard)
+                    valuesDict["durationStandard"] = durationStandard
+                    valueCount += 1  # At least one of the required fields now entered
+                except:
+                    errorDict = indigo.Dict()
+                    errorDict["durationStandard"] = "Duration must be numeric or '-' (dash) to not set value"
+                    errorDict["showAlertText"] = "You must enter a valid Duration value for the LIFX device. It must be a numeric e.g. 2.5 (representing seconds)  or '-' (dash) to leave an existing value unchanged"
+                    return (False, valuesDict, errorDict)
+
+            if valueCount == 0:  # All values missing / not specified 
+                errorDict = indigo.Dict()
+                if modeStandard == 'Color':
+                    errorMsg = u"One of Hue, Saturation, Brightness or Duration must be present"
+                    errorDict["hueStandard"] = errorMsg
+                    errorDict["saturationStandard"] = errorMsg
+                else:
+                    # 'White'
+                    errorMsg = u"One of Kelvin, Brightness or Duration must be present"
+                    errorDict["kelvinStandard"] = u"One of Hue, Kelvin, Brightness or Duration must be present"
+                errorDict["brightnessStandard"] = errorMsg
+                errorDict["durationStandard"] = errorMsg
+                errorDict["showAlertText"] = errorMsg
+                return (False, valuesDict, errorDict)
+
+            if typeId == "setColorWhite":
+                if valuesDict["selectedPresetOption"] != "NONE":
+                    errorDict = indigo.Dict()
+                    errorDict["selectedPresetOption"] = "Preset Options must be set to 'No Action'"
+                    errorDict["showAlertText"] = "Preset Options must be set to 'No Action' before you can Save. This is a safety check in case you meant to save/update a Preset and forgot to do so ;-)"
+                    return (False, valuesDict, errorDict)
+
+            return (True, valuesDict)
+
+        else:
+            # Validation for LIFX ActionType 'Waveform'
+
+            # validate modeWaveform
+            modeWaveform = valuesDict["modeWaveform"]
+            if modeWaveform != "Color" and modeWaveform != "White":
+                errorDict = indigo.Dict()
+                errorDict["modeWaveform"] = "Color / White selection must be set to one of 'Color' or 'White'"
+                errorDict["showAlertText"] = "YColor / White selection must be set to one of 'Color' or 'White'"
+                return (False, valuesDict, errorDict)
+
+            if modeWaveform == "Color":
+                # Validate 'hueWaveform' value
+                hueWaveform = valuesDict["hueWaveform"].rstrip().lstrip()  # Remove leading/trailing spaces
+                try:
+                    hueWaveform = '%.1f' % float(hueWaveform)
+                    if float(hueWaveform) < 0.0:
+                        raise ValueError('Hue must be a positive number')
+                    if float(hueWaveform) < 0.0 or float(hueWaveform) > 360.0:
+                        raise ValueError('Hue must be set between 0.0 and 360.0 (inclusive)')
+                    valuesDict["hueWaveform"] = hueWaveform
+                except:
+                    errorDict = indigo.Dict()
+                    errorDict["hueWaveform"] = "Hue must be set between 0.0 and 360.0 (inclusive)"
+                    errorDict["showAlertText"] = "You must enter a valid Hue value for the LIFX device. It must be a value between 0.0 and 360.0 (inclusive)"
+                    return (False, valuesDict, errorDict)
+
+            if modeWaveform == "Color":
+                # Validate 'saturationWaveform' value
+                saturationWaveform = valuesDict["saturationWaveform"].rstrip().lstrip()
+                try:
+                    saturationWaveform = '%.1f' % float(saturationWaveform)
+                    if float(saturationWaveform) < 0.0 or float(saturationWaveform) > 100.0:
+                        raise ValueError('Saturation must be set between 0.0 and 100.0 (inclusive)')
+                    valuesDict["saturationWaveform"] = saturationWaveform
+                except:
+                    errorDict = indigo.Dict()
+                    errorDict["saturationWaveform"] = "Saturation must be set between 0.0 and 100.0 (inclusive)"
+                    errorDict["showAlertText"] = "You must enter a valid Saturation value for the LIFX device. It must be a value between 0.0 and 100.0 (inclusive)"
+                    return (False, valuesDict, errorDict)
+
+            if modeWaveform == "White":
+                # Validate 'kelvinWaveform' value
+                kelvinWaveform = valuesDict["kelvinWaveform"].rstrip().lstrip()
+                try:
+                    kelvinWaveform = int(kelvinWaveform)
+                    if kelvinWaveform < 2500 or kelvinWaveform > 9000:
+                        raise ValueError('Kelvin must be set between 2500 and 9000 (inclusive)')
+                    valuesDict["kelvinWaveform"] = kelvinWaveform
+                except:
+                    errorDict = indigo.Dict()
+                    errorDict["kelvinWaveform"] = "Kelvin must be set between 2500 and 9000 (inclusive)"
+                    errorDict["showAlertText"] = "You must enter a valid Kelvin value for the LIFX device. It must be an integer between 2500 and 9000 (inclusive)"
+                    return (False, valuesDict, errorDict)
+
+           # Validate 'brightnessWaveform' value
+            brightnessWaveform = valuesDict["brightnessWaveform"].rstrip().lstrip()
+            try:
+                brightnessWaveform = '%.1f' % float(brightnessWaveform)
+                if float(brightnessWaveform) < 0.0 or float(brightnessWaveform) > 100.0:
+                    raise ValueError('Brightness must be set between 0.0 and 100.0 (inclusive)')
+                valuesDict["brightnessWaveform"] = brightnessWaveform
+            except:
+                errorDict = indigo.Dict()
+                errorDict["brightnessWaveform"] = "Brightness must be set between 0.0 and 100.0 (inclusive)"
+                errorDict["showAlertText"] = "You must enter a valid Brightness value for the LIFX device. It must be a value between 0.0 and 100.0 (inclusive)"
+                return (False, valuesDict, errorDict)
+
+            # Validate 'periodWaveform' value
+            periodWaveform = valuesDict["periodWaveform"].rstrip().lstrip()
+            try:
+                periodWaveform = '%s' % int(periodWaveform)
+                valuesDict["periodWaveform"] = periodWaveform
+            except:
+                errorDict = indigo.Dict()
+                errorDict["periodWaveform"] = "Period must be numeric"
+                errorDict["showAlertText"] = "You must enter a valid Period value for the LIFX device. It must be a numeric e.g. 750 (representing milliseconds)"
+                return (False, valuesDict, errorDict)
+
+            # Validate 'cyclesWaveform' value
+            cyclesWaveform = valuesDict["cyclesWaveform"].rstrip().lstrip()
+            try:
+                cyclesWaveform = str(int(cyclesWaveform))
+                valuesDict["cyclesWaveform"] = cyclesWaveform
+            except:
+                errorDict = indigo.Dict()
+                errorDict["cyclesWaveform"] = "Cycles must be numeric"
+                errorDict["showAlertText"] = "You must enter a valid Cycles value for the LIFX device. It must be a numeric e.g. 10 (representing whole seconds)"
+                return (False, valuesDict, errorDict)
+
+        if valuesDict["selectedPresetOption"] != "NONE":
+            errorDict = indigo.Dict()
+            errorDict["selectedPresetOption"] = "Preset Options must be set to 'No Action'"
+            errorDict["showAlertText"] = "Preset Options must be set to 'No Action' before you can Save. A safety check to check if you were trying to save/update a Preset and forgot to do so ;-)"
+            return (False, valuesDict, errorDict)
+
+        return (True, valuesDict)
+
+
+    def openedActionConfigUi(self, valuesDict, typeId, actionId):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        self.generalLogger.debug(u"openedActionConfigUi intercepted")
+
+        return valuesDict
+
+    def actionConfigListKelvinValues(self, filter="", valuesDict=None, typeId="", targetId=0):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        kelvinArray = [('NONE', '- Select Kelvin value -'), ('CURRENT', 'Use current Kelvin value')]
+        for kelvin in LIFX_KELVINS:
+            kelvinArray.append((str(kelvin), LIFX_KELVINS[kelvin][1]))  # Kelvin value, kelvin description
+        def getKelvin(kelvinItem):
+            return kelvinItem[1]
+        return sorted(kelvinArray, key=getKelvin)
+
+
+    def actionConfigListLifxDevices(self, filter="", valuesDict=None, typeId="", targetId=0):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        lifxArray = [('NONE', '- Select LIFX Device -')]
+        for device in indigo.devices:
+            if device.deviceTypeId == "lifxDevice" and device.id != targetId:  # Exclude own device
+                lifxArray.append((device.id, device.name))
+        def getLifxDeviceName(lifxDevItem):
+            return lifxDevItem[1]
+        return sorted(lifxArray, key=getLifxDeviceName)
+
+    def actionConfigLifxDeviceSelected(self, valuesDict, typeId, actionId):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        self.generalLogger.debug(u"actionConfigLifxDeviceSelected [lifxLamp]= %s" % str(valuesDict["optionLifxDeviceList"]))
+ 
+        lifxLampSelected = False  # Start with assuming no lamp selected in dialogue
+        if "optionLifxDeviceList" in valuesDict:
+            try:
+                devId = int(valuesDict["optionLifxDeviceList"])
+                try:
+                    for dev in indigo.devices.iter("self"):  # CHECK FILTER FOR LIFX DEVICE ONLY!!!!
+                        if dev.id == devId:
+                            lifxLampSelected = True
+                            break
+                except:
+                    pass
+            except:
+                pass
+
+        if lifxLampSelected:
+            valuesDict["lifxHue"]        = str(self.globals['lifx'][devId]['indigoHue'])
+            valuesDict["lifxSaturation"] = str(self.globals['lifx'][devId]['indigoSaturation'])
+            valuesDict["lifxBrightness"] = str(self.globals['lifx'][devId]['indigoBrightness'])
+            valuesDict["lifxKelvin"]     = str(self.globals['lifx'][devId]['indigoKelvin'])
+
+            hue = self.globals['lifx'][devId]['hsbkHue']
+            saturation = self.globals['lifx'][devId]['hsbkSaturation']
+            value = self.globals['lifx'][devId]['hsbkBrightness']
+            kelvin = self.globals['lifx'][devId]['hsbkKelvin']
+
+            if saturation != 0:
+                valuesDict["lifxMode"] = 'Color'
+                # Convert Color HSBK into RGBW
+                valuesDict["colorLifxColorpicker"] = self.actionConfigSetColorSwatchRGB(hue, saturation, value)
+                return valuesDict
+            else:
+                valuesDict["lifxMode"] = 'White'
+                # Convert White HSBK into RGBW
+                kelvin, kelvinDescription, kelvinRgb = self.actionConfigSetKelvinColorSwatchRGB(kelvin)
+                valuesDict["lifxKelvinStatic"] = str(kelvinDescription)
+                valuesDict["kelvinLifxColorpicker"] = kelvinRgb
+                return valuesDict
+
+
+        else:
+            valuesDict["lifxHue"]        = "n/a"
+            valuesDict["lifxSaturation"] = "n/a"
+            valuesDict["lifxBrightness"] = "n/a"
+            valuesDict["lifxKelvin"]     = "n/a"
+        return valuesDict
+
+    def modeStandardUpdated(self, valuesDict, typeId, actionId):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        if valuesDict["modeStandard"] == 'White':
+            valuesDict, errorDict = self.kelvinStandardUpdated(valuesDict, typeId, actionId)
+        else:
+            valuesDict, errorDict = self.hueSaturationBrightnessStandardUpdated(valuesDict, typeId, actionId)
+        return (valuesDict, errorDict)
+
+    def modeWaveformUpdated(self, valuesDict, typeId, actionId):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        if valuesDict["modeWaveform"] == 'White':
+            valuesDict, errorDict = self.kelvinWaveformUpdated(valuesDict, typeId, actionId)
+        else:
+            valuesDict, errorDict = self.hueSaturationBrightnessWaveformUpdated(valuesDict, typeId, actionId)
+        return valuesDict
+
+
+
+    def kelvinStandardUpdated(self, valuesDict, typeId, devId):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        errorDict = indigo.Dict()
+
+        kelvin = 9000
+        try:
+            if valuesDict["kelvinStandard"] == 'CURRENT':
+                kelvin = self.globals['lifx'][devId]['hsbkKelvin']
+            else:
+                kelvin = int(valuesDict["kelvinStandard"])            
+        except:
+            errorDict = indigo.Dict()
+            errorDict["kelvinStandard"] = "Kelvin must be set between 2500 and 9000 (inclusive)"
+            errorDict["showAlertText"] = "You must enter a valid Kelvin value for the LIFX device. It must be an integer between 2500 and 9000 (inclusive)"
+            return (valuesDict, errorDict)
+
+        kelvin, kelvinDescription, kelvinRgb = self.actionConfigSetKelvinColorSwatchRGB(kelvin)
+        valuesDict["kelvinStandardColorpicker"] = kelvinRgb
+        return (valuesDict, errorDict)
+
+    def hueSaturationBrightnessStandardUpdated(self, valuesDict, typeId, devId):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        errorDict = indigo.Dict()
+
+        if valuesDict["modeStandard"] == 'White':  # skip processing all fields if mode is 'White'
+            return (valuesDict, errorDict)
+
+        # Default color Swatch to black i.e. off / unset
+        valuesDict["colorStandardColorpicker"] = self.actionConfigSetColorSwatchRGB(0.0, 65535.0, 0.0)
+
+        brightnessStandard = valuesDict["brightnessStandard"].rstrip().lstrip()
+        if brightnessStandard == '' or brightnessStandard == '-':
+            brightness = self.globals['lifx'][devId]['hsbkBrightness']
+        else:
+            try:
+                brightnessStandard = '%.1f' % float(brightnessStandard)
+                if float(brightnessStandard) < 0.0 or float(brightnessStandard) > 100.0:
+                    raise ValueError('Brightness must be set between 0.0 and 100.0 (inclusive)')
+                brightness = float(float(brightnessStandard) * 65535.0 / 100.0)
+            except:
+                errorDict = indigo.Dict()
+                errorDict["brightnessStandard"] = "Brightness must be set between 0.0 and 100.0 (inclusive) or '-' (dash) to not set value"
+                errorDict["showAlertText"] = "You must enter a valid Brightness value for the LIFX device. It must be a value between 0.0 and 100.0 (inclusive) or '-' (dash) to leave an existing value unchanged"
+                return (valuesDict, errorDict)
+
+        hueStandard = valuesDict["hueStandard"].rstrip().lstrip()
+        if hueStandard == '' or hueStandard == '-':
+            hue = self.globals['lifx'][devId]['hsbkHue']
+        else:
+            try:
+                hueStandard = '%.1f' % float(hueStandard)
+                if float(hueStandard) < 0.0 or float(hueStandard) > 360.0:
+                    raise ValueError('Hue must be set between 0.0 and 360.0 (inclusive)')
+                hue = float(float(hueStandard) * 65535.0 / 360.0)
+            except:
+                errorDict = indigo.Dict()
+                errorDict["hueStandard"] = "Hue must be set between 0.0 and 360.0 (inclusive) or '-' (dash) to not set value"
+                errorDict["showAlertText"] = "You must enter a valid Hue value for the LIFX device. It must be a value between 0.0 and 360.0 (inclusive) or '-' (dash) to leave an existing value unchanged"
+                return (valuesDict, errorDict)
+
+        saturationStandard = valuesDict["saturationStandard"].rstrip().lstrip()
+        if saturationStandard == '' or saturationStandard == '-':
+            saturation = self.globals['lifx'][devId]['hsbkSaturation']
+        else:
+            try:
+                saturationStandard = '%.1f' % float(saturationStandard)
+                if float(saturationStandard) < 0.0 or float(saturationStandard) > 100.0:
+                    raise ValueError('Saturation must be set between 0.0 and 100.0 (inclusive)')
+                saturation = float(float(saturationStandard) * 65535.0 / 100.0)
+            except:
+                errorDict = indigo.Dict()
+                errorDict["saturationStandard"] = "Saturation must be set between 0.0 and 100.0 (inclusive) or '-' (dash) to not set value"
+                errorDict["showAlertText"] = "You must enter a valid Saturation value for the LIFX device. It must be a value between 0.0 and 100.0 (inclusive) or '-' (dash) to leave an existing value unchanged"
+                return (valuesDict, errorDict)
+
+        valuesDict["colorStandardColorpicker"] = self.actionConfigSetColorSwatchRGB(hue, saturation, brightness)
+        return (valuesDict, errorDict)
+
+    def kelvinWaveformUpdated(self, valuesDict, typeId, devId):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        errorDict = indigo.Dict()
+
+        kelvin = 9000
+        try:
+            if valuesDict["kelvinWaveform"] == 'CURRENT':
+                kelvin = self.globals['lifx'][devId]['hsbkKelvin']
+            else:
+                kelvin = int(valuesDict["kelvinWaveform"])            
+        except:
+            errorDict = indigo.Dict()
+            errorDict["kelvinWaveform"] = "Kelvin must be set between 2500 and 9000 (inclusive)"
+            errorDict["showAlertText"] = "You must enter a valid Kelvin value for the LIFX device. It must be an integer between 2500 and 9000 (inclusive)"
+            return (valuesDict, errorDict)
+
+        kelvin, kelvinDescription, kelvinRgb = self.actionConfigSetKelvinColorSwatchRGB(kelvin)
+        valuesDict["kelvinWaveformColorpicker"] = kelvinRgb
+        return (valuesDict, errorDict)
+
+
+    def hueSaturationBrightnessWaveformUpdated(self, valuesDict, typeId, devId):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        errorDict = indigo.Dict()
+
+        if valuesDict["modeWaveform"] == 'White':  # skip processing all fields if mode is 'White'
+            return valuesDict
+
+        # Default color Swatch to black i.e. off / unset
+        valuesDict["colorWaveformColorpicker"] = self.actionConfigSetColorSwatchRGB(0.0, 65535.0, 0.0)
+
+        brightnessWaveform = valuesDict["brightnessWaveform"].rstrip().lstrip()
+        if brightnessWaveform == '' or brightnessWaveform == '-':
+            brightness = self.globals['lifx'][devId]['hsbkBrightness']
+        else:
+            try:
+                brightnessWaveform = '%.1f' % float(brightnessWaveform)
+                if float(brightnessWaveform) < 0.0 or float(brightnessWaveform) > 100.0:
+                    raise ValueError('Brightness must be set between 0.0 and 100.0 (inclusive)')
+                brightness = float(float(brightnessWaveform) * 65535.0 / 100.0)
+            except:
+                errorDict = indigo.Dict()
+                errorDict["brightnessWaveform"] = "Brightness must be set between 0.0 and 100.0 (inclusive) or '-' (dash) to not set value"
+                errorDict["showAlertText"] = "You must enter a valid Brightness value for the LIFX device. It must be a value between 0.0 and 100.0 (inclusive) or '-' (dash) to leave an existing value unchanged"
+                return (valuesDict, errorDict)
+
+        hueWaveform = valuesDict["hueWaveform"].rstrip().lstrip()
+        if hueWaveform == '' or hueWaveform == '-':
+            hue = self.globals['lifx'][devId]['hsbkHue']
+        else:
+            try:
+                hueWaveform = '%.1f' % float(hueWaveform)
+                if float(hueWaveform) < 0.0 or float(hueWaveform) > 360.0:
+                    raise ValueError('Hue must be set between 0.0 and 360.0 (inclusive)')
+                hue = float(float(hueWaveform) * 65535.0 / 360.0)
+            except:
+                errorDict = indigo.Dict()
+                errorDict["hueWaveform"] = "Hue must be set between 0.0 and 360.0 (inclusive) or '-' (dash) to not set value"
+                errorDict["showAlertText"] = "You must enter a valid Hue value for the LIFX device. It must be a value between 0.0 and 360.0 (inclusive) or '-' (dash) to leave an existing value unchanged"
+                return (valuesDict, errorDict)
+
+        saturationWaveform = valuesDict["saturationWaveform"].rstrip().lstrip()
+        if saturationWaveform == '' or saturationWaveform == '-':
+            saturation = self.globals['lifx'][devId]['hsbkSaturation']
+        else:
+            try:
+                saturationWaveform = '%.1f' % float(saturationWaveform)
+                if float(saturationWaveform) < 0.0 or float(saturationWaveform) > 100.0:
+                    raise ValueError('Saturation must be set between 0.0 and 100.0 (inclusive)')
+                saturation = float(float(saturationWaveform) * 65535.0 / 100.0)
+            except:
+                errorDict = indigo.Dict()
+                errorDict["saturationWaveform"] = "Saturation must be set between 0.0 and 100.0 (inclusive) or '-' (dash) to not set value"
+                errorDict["showAlertText"] = "You must enter a valid Saturation value for the LIFX device. It must be a value between 0.0 and 100.0 (inclusive) or '-' (dash) to leave an existing value unchanged"
+                return (valuesDict, errorDict)
+
+        valuesDict["colorWaveformColorpicker"] = self.actionConfigSetColorSwatchRGB(hue, saturation, brightness)
+        return (valuesDict, errorDict)
+
+
+    def actionConfigSetColorSwatchRGB(self, hue, saturation, value):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        # hue, saturation and value are integers in the range 0 - 65535
+        hue = float(hue) / 65535.0
+        value = float(value) / 65535.0
+        saturation = float(saturation) / 65535.0
+
+        red, green, blue = colorsys.hsv_to_rgb(hue, saturation, value)
+
+        red   = int(round(float(red * 255.0)))
+        green = int(round(float(green * 255.0)))
+        blue  = int(round(float(blue * 255.0)))
+
+        rgb = [red,green,blue]
+        rgbHexVals = []
+        for byteLevel in rgb:
+            if byteLevel < 0:
+                byteLevel = 0
+            elif byteLevel > 255:
+                byteLevel = 255
+            rgbHexVals.append("%02X" % byteLevel)
+        return (' '.join(rgbHexVals))
+
+
+    def actionConfigSetKelvinColorSwatchRGB(self, argKelvin):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        # Set ColorSwatch to nearest match to Kelvin value as shown in the iOS LIFX App
+        kelvin = min(LIFX_KELVINS, key=lambda x:abs(x - argKelvin))
+        rgb, kelvinDescription = LIFX_KELVINS[kelvin]
+        # self.generalLogger.info(u"KELVIN COLOR SWATCH; argKelvin = %s, Kelvin = %s, LIFX_KELVINS[kelvin] = %s, RGB = %s" % (argKelvin, kelvin, LIFX_KELVINS[kelvin], rgb))
+        rgbHexVals = []
+        for byteLevel in rgb:
+            if byteLevel < 0:
+                byteLevel = 0
+            elif byteLevel > 255:
+                byteLevel = 255
+            rgbHexVals.append("%02X" % byteLevel)
+        return (kelvin, kelvinDescription, (' '.join(rgbHexVals)))
+
+
+    def actionConfigPresetSelected(self, valuesDict, typeId, actionId):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        self.generalLogger.debug(u"actionConfigPresetSelected [Preset]= %s" % str(valuesDict["optionPresetList"]))
+ 
+        valuesDict["actionTypePreset"] = 'No Preset Selected'
+        presetSelected = False  # Start with assuming no preset selected in dialogue
+        if "optionPresetList" in valuesDict:
+            try:
+                variableId = int(valuesDict["optionPresetList"])
+                try:
+                    if indigo.variables[variableId].folderId == self.globals['folders']['VariablesId']:
+                        selectedPresetName = indigo.variables[variableId].name
+                        selectedPresetValue = indigo.variables[variableId].value
+                        presetSelected = True
+                except:
+                    pass
+            except:
+                pass
+
+        if not presetSelected:
+            valuesDict["presetSelected"] = 'NO'  # Hidden field for contriolling fields displayed
+        else:
+            valuesDict["presetSelected"] = 'YES'  # Hidden field for contriolling fields displayed
+
+
+            actionType, mode, turnOnIfOff, hue, saturation, brightness, kelvin, duration, transient, period, cycles, dutyCycle, waveform = self.decodePreset(selectedPresetValue)
+
+            valuesDict["actionTypePreset"] = actionType
+            if actionType == 'Standard':
+
+                if turnOnIfOff  == '0':
+                    valuesDict["presetTurnOnIfOffStandardStatic"] = 'No'
+                else:
+                    valuesDict["presetTurnOnIfOffStandardStatic"] = 'Yes'
+                if brightness != '':
+                    valuesDict["presetBrightnessStandard"] = brightness
+                else:
+                    brightness = '100.0' # Default to 100% saturation (for Color Swatch)
+                if mode == 'White':
+                    if kelvin != '':
+                        kelvin, kelvinDescription, kelvinRgb = self.actionConfigSetKelvinColorSwatchRGB(int(kelvin))
+                        valuesDict["presetKelvinStandardStatic"] = str(kelvinDescription)
+                        valuesDict["kelvinPresetColorpicker"] = kelvinRgb
+                elif mode == 'Color':
+                    valuesDict["actionTypePreset"] = actionType
+                    valuesDict["presetModeStandard"] = mode
+                    if hue != '':
+                        valuesDict["presetHueStandard"] = hue
+                    else:
+                        hue = '360.0'  # Default to Red (for Color Swatch)
+                    if saturation != '':
+                        valuesDict["presetSaturationStandard"] = saturation
+                    else:
+                        saturation = '100.0' # Default to 100% saturation (for Color Swatch)
+                    hue = float(float(hue) * 65535.0 / 360.0)
+                    saturation = float(float(saturation) * 65535.0 / 100.0)
+                    brightness = float(float(brightness) * 65535.0 / 100.0)
+                    valuesDict["colorPresetColorpicker"] = self.actionConfigSetColorSwatchRGB(hue, saturation, brightness)
+                else:
+                    valuesDict["presetModeStandard"] = 'Preset has invalid mode'
+                    return valuesDict  # Error: mode must be 'White' or 'Color'
+
+
+                if duration != '':
+                    valuesDict["presetDurationStandard"] = duration
+                valuesDict["presetModeStandard"] = mode
+            elif actionType == 'Waveform':
+                if brightness != '':
+                    valuesDict["presetBrightnessWaveform"] = brightness
+                else:
+                    brightness = '100.0' # Default to 100% saturation (for Color Swatch)
+                if mode == 'White':
+                    if kelvin != '':
+                        kelvin, kelvinDescription, kelvinRgb = self.actionConfigSetKelvinColorSwatchRGB(int(kelvin))
+                        valuesDict["presetKelvinWaveformStatic"] = str(kelvinDescription)
+                        valuesDict["kelvinPresetWaveformColorpicker"] = kelvinRgb
+                elif mode == 'Color':
+                    if hue != '':
+                        valuesDict["presetHueWaveform"] = hue
+                    else:
+                        hue = '360.0'  # Default to Red (for Color Swatch)
+                    if saturation != '':
+                        valuesDict["presetSaturationWaveform"] = saturation
+                    else:
+                        saturation = '100.0' # Default to 100% saturation (for Color Swatch)
+                    hue = float(float(hue) * 65535.0 / 360.0)
+                    saturation = float(float(saturation) * 65535.0 / 100.0)
+                    brightness = float(float(brightness) * 65535.0 / 100.0)
+                    valuesDict["colorPresetWaveformColorpicker"] = self.actionConfigSetColorSwatchRGB(hue, saturation, brightness)
+                else:
+                    valuesDict["presetModeWaveform"] = 'Preset has invalid mode'
+                    return valuesDict  # Error: mode must be 'White' or 'Color'
+
+                if transient != '':
+                    valuesDict["presetTransientWaveform"] = transient
+                if period != '':
+                    valuesDict["presetPeriodWaveform"] = period
+                if cycles != '':
+                    valuesDict["presetCyclesWaveform"] = cycles
+                if dutyCycle != '':
+                    valuesDict["presetDutyCycleWaveform"] = dutyCycle
+                if waveform != '':
+                    valuesDict["presetTypeWaveform"] = waveform
+                valuesDict["presetModeWaveform"] = mode
+            else:
+                valuesDict["presetModeStandard"] = 'Preset has invalid LIFX Action'
+                valuesDict["presetModeWaveform"] = 'Preset has invalid LIFX Action'
+                valuesDict["actionTypePreset"] = 'Preset has invalid LIFX Action'
+
+        return valuesDict
+
+
+    def actionConfigOptionSelected(self, valuesDict, typeId, actionId):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        self.generalLogger.debug(u"actionConfigOptionSelected")
+
+        # Turn Off Save/Update Preset Dialogue
+        valuesDict["resultPreset"] = "resultNa"
+        valuesDict["newPresetName"] = ""
+        valuesDict["selectedPresetOption"] = "NONE"
+
+        valuesDict["optionLifxDeviceList"] = "NONE"
+        valuesDict["lifxMode"] = "NONE"
+        valuesDict["presetSelected"] = "NO"
+
+        return valuesDict
+
+
+    def actionConfigApplyLifxOptionValues(self, valuesDict, typeId, actionId):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        self.generalLogger.debug(u"actionConfigPresetApplyOptionValues: typeId[%s], actionId[%s], ValuesDict:\n%s" % (typeId, actionId, valuesDict))
+
+        if valuesDict ["actionType"] == 'Standard':
+            valuesDict["modeStandard"] = valuesDict["lifxMode"]
+            valuesDict["brightnessStandard"] = valuesDict["lifxBrightness"]
+            if valuesDict["lifxMode"] == 'Color':
+                valuesDict["hueStandard"] = valuesDict["lifxHue"]
+                valuesDict["saturationStandard"] = valuesDict["lifxSaturation"]
+                hue = float(valuesDict["lifxHue"]) * 65535.0 / 360.0
+                saturation = float(valuesDict["lifxSaturation"]) * 65535.0 / 100.0
+                brightness = float(valuesDict["lifxBrightness"]) * 65535.0 / 100.0
+                # Convert Color HSBK into RGBW
+                valuesDict["colorStandardColorpicker"] = self.actionConfigSetColorSwatchRGB(hue, saturation, brightness)
+                return valuesDict
+            else:
+                kelvin = float(valuesDict["lifxKelvinStatic"][0:4])  # lifxKelvinStatic is a Kelvin description filed e.g. '3200K Neutral Warm'
+                # Convert White HSBK into RGBW
+                kelvin, kelvinDescription, kelvinRgb = self.actionConfigSetKelvinColorSwatchRGB(kelvin)
+                valuesDict["kelvinStandard"] = kelvin
+                valuesDict["kelvinStandardColorpicker"] = kelvinRgb
+                return valuesDict
+        else:
+            valuesDict["modeWaveform"] = valuesDict["lifxMode"]
+            valuesDict["brightnessWaveform"] = valuesDict["lifxBrightness"]
+            if valuesDict["lifxMode"] == 'Color':
+                valuesDict["hueWaveform"] = valuesDict["lifxHue"]
+                valuesDict["saturationWaveform"] = valuesDict["lifxSaturation"]
+                hue = float(valuesDict["lifxHue"]) * 65535.0 / 360.0
+                saturation = float(valuesDict["lifxSaturation"]) * 65535.0 / 100.0
+                brightness = float(valuesDict["lifxBrightness"]) * 65535.0 / 100.0
+                # Convert Color HSBK into RGBW
+                valuesDict["colorWaveformColorpicker"] = self.actionConfigSetColorSwatchRGB(hue, saturation, brightness)
+                return valuesDict
+            else:
+                kelvin = float(valuesDict["lifxKelvinStatic"][0:4])  # lifxKelvinStatic is a Kelvin description filed e.g. '3200K Neutral Warm'
+                # Convert White HSBK into RGBW
+                kelvin, kelvinDescription, kelvinRgb = self.actionConfigSetKelvinColorSwatchRGB(kelvin)
+                valuesDict["kelvinWaveform"] = kelvin
+                valuesDict["kelvinWaveformColorpicker"] = kelvinRgb
+                return valuesDict
+
+
+    def actionConfigApplyStandardPresetOptionValues(self, valuesDict, typeId, actionId):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        self.generalLogger.debug(u"actionConfigApplyStandardPresetOptionValues: typeId[%s], actionId[%s], ValuesDict:\n%s" % (typeId, actionId, valuesDict))
+
+        valuesDict["actionType"] = 'Standard'
+        if valuesDict["presetBrightnessStandard"] != '':
+            valuesDict["brightnessStandard"] = valuesDict["presetBrightnessStandard"]
+        if valuesDict["presetModeStandard"] == 'White':
+            valuesDict["modeStandard"] = 'White'
+            if valuesDict["presetKelvinStandardStatic"] != '':
+                valuesDict["kelvinStandard"] = valuesDict["presetKelvinStandardStatic"][0:4]
+
+            valuesDict, errorDict = self.kelvinStandardUpdated(valuesDict, typeId, actionId)
+
+        elif valuesDict["presetModeStandard"] == 'Color':
+            valuesDict["modeStandard"] = 'Color'
+            if valuesDict["presetHueStandard"] != '':
+                valuesDict["hueStandard"] = valuesDict["presetHueStandard"]
+            if valuesDict["presetSaturationStandard"] != '':
+                valuesDict["saturationStandard"] = valuesDict["presetSaturationStandard"]
+
+            valuesDict, errorDict = self.hueSaturationBrightnessStandardUpdated(valuesDict, typeId, actionId)
+
+            if valuesDict["presetDurationStandard"] != '':
+                valuesDict["durationStandard"] = valuesDict["presetDurationStandard"]
+
+
+        self.generalLogger.debug(u"actionConfigApplyStandardPresetOptionValues: Returned ValuesDict:\n%s" % (valuesDict))
+
+        return (valuesDict, errorDict)
+
+
+    def actionConfigApplyWaveformPresetOptionValues(self, valuesDict, typeId, actionId):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        self.generalLogger.debug(u"actionConfigApplyWaveformPresetOptionValues: typeId[%s], actionId[%s], ValuesDict:\n%s" % (typeId, actionId, valuesDict))
+
+        valuesDict["actionType"] = 'Waveform'
+        if valuesDict["presetBrightnessWaveform"] != '':
+            valuesDict["brightnessWaveform"] = valuesDict["presetBrightnessWaveform"]
+        if valuesDict["presetModeWaveform"] == 'White':
+            valuesDict["modeWaveform"] = 'White'
+            if valuesDict["presetKelvinWaveformStatic"] != '':
+                valuesDict["kelvinWaveform"] = valuesDict["presetKelvinWaveformStatic"][0:4]
+
+            valuesDict, errorDict = self.kelvinWaveformUpdated(valuesDict, typeId, actionId)
+
+        if valuesDict["presetModeWaveform"] == 'Color':
+            valuesDict["modeWaveform"] = 'Color'
+            if valuesDict["presetHueWaveform"] != '':
+                valuesDict["hueWaveform"] = valuesDict["presetHueWaveform"]
+            if valuesDict["presetSaturationWaveform"] != '':
+                valuesDict["saturationWaveform"] = valuesDict["presetSaturationWaveform"]
+
+            valuesDict, errorDict = self.hueSaturationBrightnessWaveformUpdated(valuesDict, typeId, actionId)
+
+        if valuesDict["presetTransientWaveform"] != '':
+            valuesDict["transientWaveform"] = valuesDict["presetTransientWaveform"]
+        if valuesDict["presetPeriodWaveform"] != '':
+            valuesDict["periodWaveform"] = valuesDict["presetPeriodWaveform"]
+        if valuesDict["presetCyclesWaveform"] != '':
+            valuesDict["cyclesWaveform"] = valuesDict["presetCyclesWaveform"]
+        if valuesDict["presetDutyCycleWaveform"] != '':
+            valuesDict["dutyCycleWaveform"] = valuesDict["presetDutyCycleWaveform"]
+        if valuesDict["presetTypeWaveform"] != '':
+            valuesDict["typeWaveform"] = valuesDict["presetTypeWaveform"]
+
+        self.generalLogger.debug(u"actionConfigApplyWaveformPresetOptionValues: Returned ValuesDict:\n%s" % (valuesDict))
+
+        return valuesDict
+
+
+    def actionConfigPresetActionSelected(self, valuesDict, typeId, actionId):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        self.generalLogger.debug(u"actionConfigPresetActionSelected: %s" % (valuesDict))
+
+
+        valuesDict["resultPreset"] = "resultNa"
+        valuesDict["newPresetName"] = ""
+
+        return valuesDict
+
+
+    def actionConfigPresetSaveButtonPressed(self, valuesDict, typeId, actionId):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        valuesDict["resultPreset"] = "resultNa"
+
+        self.generalLogger.debug(u"actionConfigPresetSaveButtonPressed: typeId[%s], actionId[%s]" % (typeId, actionId))
+
+        self.validation = self.validateActionConfigUi(valuesDict, "applyPreset", actionId)
+
+        self.generalLogger.debug(u"self.validation: typeId[%s], actionId[%s]" % (type(self.validation), self.validation))
+
+        valuesDict = self.validation[1]  # valuesDict
+
+        if self.validation[0] == True:
+            preset = self.buildPresetVariable(valuesDict)  # Build Preset Variable
+            if len(preset) > 0:
+                try:
+                    if not re.match(r'\w+$', valuesDict["newPresetName"]):
+                        raise ValueError("newPresetName must be a alphanumeric or '_'")
+                    indigo.variable.create(valuesDict["newPresetName"], value=preset,  folder=self.globals['folders']['VariablesId'])
+                    valuesDict["resultPreset"] = "resultSaveOk"
+                except:
+                    valuesDict["resultPreset"] = "resultSaveError"
+                    errorDict = indigo.Dict()
+                    errorDict["newPresetName"] = "Unable to create preset variable"
+                    errorDict["showAlertText"] = "Unable to create preset variable. Check that the preset name format is valid (alphanumeric and underscore only) and that the preset variable doesn't already exist"
+                    return (valuesDict, errorDict)
+        else:
+            valuesDict["resultPreset"] = "resultInvalidValue"
+            return (valuesDict, self.validation[2]) 
+
+        return valuesDict
+
+
+    def actionConfigPresetUpdateButtonPressed(self, valuesDict, typeId, actionId):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        self.generalLogger.debug(u"actionConfigPresetUpdateButtonPressed: typeId[%s], actionId[%s]" % (typeId, actionId))
+
+        valuesDict["resultPreset"] = "resultNa"
+
+        self.validation = self.validateActionConfigUi(valuesDict, "setPreset", actionId)
+
+        self.generalLogger.debug(u"self.validation: typeId[%s], actionId[%s]" % (type(self.validation), self.validation))
+
+        valuesDict = self.validation[1]  # valuesDict
+
+        if self.validation[0] == True:
+            preset = self.buildPresetVariable(valuesDict)  # Build Preset Variable
+            if len(preset) > 0:
+                try:
+                    presetVariableId = int(valuesDict["updatePresetList"])
+                    presetVariableToUpdate =  indigo.variables[presetVariableId]
+                    presetVariableToUpdate.value = preset
+                    presetVariableToUpdate.replaceOnServer()
+                    valuesDict["resultPreset"] = "resultUpdateOk"
+                except:
+                    valuesDict["resultPreset"] = "resultUpdateError"
+                    errorDict = indigo.Dict()
+                    errorDict["updatePresetList"] = "Unable to update preset variable"
+                    errorDict["showAlertText"] = "Unable to update preset variable"
+                    return (valuesDict, errorDict)
+        else:
+            self.generalLogger.debug(u"self.validation: FALSE")
+            valuesDict["resultPreset"] = "resultInvalidValue"
+            return (valuesDict, self.validation[2]) 
+
+        return valuesDict
+
+
+    def buildPresetVariable(self, valuesDict):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        preset = ""
+        countOfValuesInPreset = 0
+
+        if valuesDict["actionType"] == 'Standard':
+            if valuesDict["modeStandard"] == 'White':
+                if valuesDict["kelvinStandard"].rstrip() != '':
+                    countOfValuesInPreset += 1
+                    preset = preset + ",K=" + valuesDict["kelvinStandard"].rstrip()
+            elif valuesDict["modeStandard"] == 'Color':
+                if valuesDict["hueStandard"].rstrip() != '':
+                    countOfValuesInPreset += 1
+                    preset = preset + ",H=" + valuesDict["hueStandard"].rstrip()
+                if valuesDict["saturationStandard"].rstrip() != '':
+                    countOfValuesInPreset += 1
+                    preset = preset + ",S=" + valuesDict["saturationStandard"].rstrip()
+            if valuesDict["brightnessStandard"].rstrip() != '':
+                countOfValuesInPreset += 1
+                preset = preset + ",B=" + valuesDict["brightnessStandard"].rstrip()
+        elif  valuesDict["actionType"] == 'Waveform':
+            if valuesDict["modeWaveform"] == 'White':
+                if valuesDict["kelvinWaveform"].rstrip() != '':
+                    countOfValuesInPreset += 1
+                    preset = preset + ",K=" + valuesDict["kelvinWaveform"].rstrip()
+            elif valuesDict["modeWaveform"] == 'Color':
+                if valuesDict["hueWaveform"].rstrip() != '':
+                    countOfValuesInPreset += 1
+                    preset = preset + ",H=" + valuesDict["hueWaveform"].rstrip()
+                if valuesDict["saturationWaveform"].rstrip() != '':
+                    countOfValuesInPreset += 1
+                    preset = preset + ",S=" + valuesDict["saturationWaveform"].rstrip()
+            if valuesDict["brightnessWaveform"].rstrip() != '':
+                countOfValuesInPreset += 1
+                preset = preset + ",B=" + valuesDict["brightnessWaveform"].rstrip()
+
+            if valuesDict["transientWaveform"]:
+                transientWaveform = '1'
+            else:
+                transientWaveform = '0'
+            countOfValuesInPreset += 1
+            preset = preset + ",T=" + transientWaveform
+            if valuesDict["periodWaveform"].rstrip() != '':
+                countOfValuesInPreset += 1
+                preset = preset + ",P=" + valuesDict["periodWaveform"].rstrip()
+            if valuesDict["cyclesWaveform"].rstrip() != '':
+                countOfValuesInPreset += 1
+                preset = preset + ",C=" + valuesDict["cyclesWaveform"].rstrip()
+            if valuesDict["dutyCycleWaveform"].rstrip() != '':
+                countOfValuesInPreset += 1
+                preset = preset + ",DC=" + valuesDict["dutyCycleWaveform"].rstrip()
+            if valuesDict["typeWaveform"].rstrip() != '':
+                countOfValuesInPreset += 1
+                preset = preset + ",W=" + valuesDict["typeWaveform"].rstrip()
+
+        if len(preset) > 0:
+            if valuesDict["actionType"] == 'Waveform':
+                if valuesDict["modeWaveform"] == 'White':
+                    prefix = 'AT=W,M=W,'
+                else:
+                    prefix = 'AT=W,M=C,'
+            else:
+                if valuesDict["modeStandard"] == 'White':
+                    prefix = 'AT=S,M=W,'
+                else:
+                    prefix = 'AT=S,M=C,'
+            preset = prefix + preset[1:]  # Remove leading ',' from preset
+
+        return preset
+
+
+    def getMenuActionConfigUiValues(self, menuId):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        valuesDict = indigo.Dict()
+        errorMsgDict = indigo.Dict() 
+
+        self.generalLogger.debug(u"QWERTY QWERTY = %s" % (menuId))
+
+        # if menuId == "yourMenuItemId":
+        #  valuesDict["someFieldId"] = someDefaultValue
+        return (valuesDict, errorMsgDict)
+
+
+    def actionControlUniversal(self, action, dev):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        ###### STATUS REQUEST ######
+        if action.deviceAction == indigo.kUniversalAction.RequestStatus:
+            self._processStatus(action, dev)
+
+
+    def _processStatus(self, pluginAction, dev):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_STATUS_MEDIUM, 'STATUS', [dev.id]])
+        self.generalLogger.info(u"sent \"%s\" %s" % (dev.name, "status request"))
+
+
+    def actionControlDevice(self, action, dev):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+        if dev.states['connected'] == False or self.globals['lifx'][dev.id]['started'] == False:
+            self.generalLogger.info(u"Unable to process  \"%s\" for \"%s\" as device not connected" % (action.deviceAction, dev.name))
+            return
+
+        ###### TURN ON ######
+        if action.deviceAction ==indigo.kDeviceAction.TurnOn:
+            self._processTurnOn(action, dev)
+
+        ###### TURN OFF ######
+        elif action.deviceAction ==indigo.kDeviceAction.TurnOff:
+            self._processTurnOff(action, dev)
+
+        ###### TOGGLE ######
+        elif action.deviceAction ==indigo.kDeviceAction.Toggle:
+            self._processTurnOnOffToggle(action, dev)
+
+        ###### SET BRIGHTNESS ######
+        elif action.deviceAction ==indigo.kDeviceAction.SetBrightness:
+            newBrightness = action.actionValue  #  action.actionValue contains brightness value (0 - 100)
+            self._processBrightnessSet(action, dev, newBrightness)
+
+        ###### BRIGHTEN BY ######
+        elif action.deviceAction ==indigo.kDeviceAction.BrightenBy:
+            newBrightness = dev.brightness + action.actionValue  #  action.actionValue contains brightness increase value (0 - 100)
+            if newBrightness > 100:
+                newBrightness = 100
+            self._processBrightnessSet(action, dev, newBrightness)
+            self.generalLogger.info(u"sent \"%s\" %s to %d" % (dev.name, "brighten", newBrightness))
+            dev.updateStateOnServer("brightnessLevel", newBrightness)
+
+        ###### DIM BY ######
+        elif action.deviceAction ==indigo.kDeviceAction.DimBy:
+            newBrightness = dev.brightness - action.actionValue  #  action.actionValue contains brightness decrease value (0 - 100)
+            if newBrightness < 0:
+                newBrightness = 0
+            self._processBrightnessSet(action, dev, newBrightness)
+            self.generalLogger.info(u"sent \"%s\" %s to %d" % (dev.name, "dim", newBrightness))
+            dev.updateStateOnServer("brightnessLevel", newBrightness)
+
+        ###### SET COLOR LEVELS ######
+        elif action.deviceAction ==indigo.kDeviceAction.SetColorLevels:
+            self.generalLogger.debug(u"SET COLOR LEVELS = \"%s\" %s" % (dev.name, action))
+            self._processSetColorLevels(action, dev)
+
+
+    def _processTurnOn(self, pluginAction, dev, actionUi='on'):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        self.generalLogger.debug(u"LIFX 'processTurnOn' [%s]" % (self.globals['lifx'][dev.id]['ipAddress'])) 
+
+        self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'ON', [dev.id]])
+
+        duration = self.globals['lifx'][dev.id]['durationOn']
+        self.generalLogger.info(u"sent \"%s\" %s with duration of %s seconds" % (dev.name, actionUi, duration))
+
+    def _processTurnOff(self, pluginAction, dev, actionUi='off'):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        self.generalLogger.debug(u"LIFX 'processTurnOff' [%s]" % (self.globals['lifx'][dev.id]['ipAddress'])) 
+
+        self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'OFF', [dev.id]])
+
+        duration = self.globals['lifx'][dev.id]['durationOff']
+        self.generalLogger.info(u"sent \"%s\" %s with duration of %s seconds" % (dev.name, actionUi, duration))
+
+    def _processTurnOnOffToggle(self, pluginAction, dev):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        self.generalLogger.debug(u"LIFX 'processTurnOnOffToggle' [%s]" % (self.globals['lifx'][dev.id]['ipAddress'])) 
+
+        onStateRequested = not dev.onState
+        if onStateRequested == True:
+            actionUi = "toggle from 'off' to 'on'"
+            self._processTurnOn(pluginAction, dev, actionUi)
+        else:
+            actionUi = "toggle from 'on' to 'off'"
+            self._processTurnOff(pluginAction, dev, actionUi)
+
+    def _processBrightnessSet(self, pluginAction, dev, newBrightness):  # Dev is a LIFX Lamp
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        duration = self.globals['lifx'][dev.id]['durationDimBrighten']
+        if newBrightness > 0:
+            if newBrightness > dev.brightness:
+                actionUi = 'brighten'
+            else:
+                actionUi = 'dim'  
+            self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'BRIGHTNESS', [dev.id, newBrightness]])
+            self.generalLogger.info(u"sent \"%s\" %s to %s with duration of %s seconds" % (dev.name, actionUi, newBrightness, duration))
+        else:
+            self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'OFF', [dev.id]])
+            self.generalLogger.info(u"sent \"%s\" %s with duration of %s seconds" % (dev.name, 'dim to off', duration))
+
+
+    def _processSetColorLevels(self, action, dev):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        try:
+            self.generalLogger.debug(u'processSetColorLevels ACTION:\n%s ' % action)
+
+            redLevel = float(dev.states['redLevel'])
+            greenLevel = float(dev.states['greenLevel'])
+            blueLevel = float(dev.states['blueLevel'])
+            whiteLevel = float(dev.states['whiteLevel'])
+            whiteTemperature =  int(dev.states['whiteTemperature'])
+
+
+            if 'whiteLevel' in action.actionValue:
+                whiteLevel = float(action.actionValue['whiteLevel'])
+                
+            if 'whiteTemperature' in action.actionValue:
+                whiteTemperature = int(action.actionValue['whiteTemperature'])
+                if whiteTemperature < 2500:
+                    whiteTemperature = 2500
+                elif whiteTemperature > 9000:
+                    whiteTemperature = 9000
+                
+            if 'redLevel' in action.actionValue:
+                redLevel = float(action.actionValue['redLevel'])
+            if 'greenLevel' in action.actionValue:
+                greenLevel = float(action.actionValue['greenLevel'])
+            if 'blueLevel' in action.actionValue:
+                blueLevel = float(action.actionValue['blueLevel'])
+
+            duration = str(self.globals['lifx'][dev.id]['durationColorWhite'])
+
+            if ('whiteLevel' in action.actionValue) or ('whiteTemperature' in action.actionValue):
+                # If either of 'whiteLevel' or 'whiteTemperature' are altered - assume mode is White
+
+                # self.generalLogger.debug(u'WHITE LEVEL TYPE = %s, WHITE LEVEL = %s' % (type(whiteLevel), whiteLevel))
+
+                kelvin = min(LIFX_KELVINS, key=lambda x:abs(x - whiteTemperature))
+                rgb, kelvinDescription = LIFX_KELVINS[kelvin]
+
+
+
+                self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'WHITE', [dev.id, whiteLevel, kelvin]])
+
+                self.generalLogger.info(u"sent \"%s\" set White Level to \"%s\" and White Temperature to \"%s\" with duration of %s seconds" % (dev.name, int(whiteLevel), kelvinDescription, duration))
+
+            else:
+                # As neither of 'whiteTemperature' or 'whiteTemperature' are set - assume mode is Colour
+                self.generalLogger.debug(u"sent \"%s\" Red = %s[%s], Green = %s[%s], Blue = %s[%s]" % (dev.name, redLevel, int(redLevel * 2.56), greenLevel, int(greenLevel * 2.56), blueLevel, int(blueLevel * 2.56)))
+
+                # Convert Indigo values for rGB (0-100) to colorSys values (0.0-1.0)
+                red = float(redLevel / 100.0)         # e.g. 100.0/100.0 = 1.0
+                green = float(greenLevel / 100.0)     # e.g. 70.0/100.0 = 0.7
+                blue = float(blueLevel / 100.0)       # e.g. 40.0/100.0 = 0.4
+
+                hsv_hue, hsv_saturation, hsv_brightness = colorsys.rgb_to_hsv(red, green, blue)
+
+                # Convert colorsys values for HLS (0.0-1.0) to H (0-360), L aka B (0.0 -100.0) and S (0.0 -100.0)
+                hue = int(hsv_hue * 65535.0)
+                brightness = int(hsv_brightness * 65535.0)
+                saturation = int(hsv_saturation * 65535.0)
+
+                self.generalLogger.debug(u"ColorSys: \"%s\" R, G, B: %s, %s, %s = H: %s[%s], S: %s[%s], B: %s[%s]" % (dev.name, red, green, blue, hue, hsv_hue, saturation, hsv_saturation, brightness, hsv_brightness))
+
+                self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'COLOR', [dev.id, hue, saturation, brightness]])
+
+                hueUi = '%s' % int(((hue  * 360.0) / 65535.0))
+                saturationUi = '%s' % int(((saturation  * 100.0) / 65535.0))
+                brightnessUi = '%s' % int(((brightness  * 100.0) / 65535.0))
+
+                self.generalLogger.info(u"sent \"%s\" set Color Level to hue \"%s\", saturation \"%s\" and brightness \"%s\" with duration of %s seconds" % (dev.name, hueUi, saturationUi, brightnessUi, duration))
+
+        except StandardError, e:
+            self.generalLogger.error(u"StandardError detected during processSetColorLevels. Line '%s' has error='%s'" % (sys.exc_traceback.tb_lineno, e))
+
+
+    def setColorWhite(self, pluginAction, dev):  # Dev is a LIFX Lamp
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+            
+        self.generalLogger.debug(u"LIFX 'setColorWhite' [%s] - PluginAction Props =\n%s" % (self.globals['lifx'][dev.id]['ipAddress'], pluginAction.props)) 
+
+        actionType = str(pluginAction.props.get('actionType', 'INVALID'))  # 'Standard' or 'Waveform'
+
+        if dev.states['connected'] == False or self.globals['lifx'][dev.id]['started'] == False:
+            self.generalLogger.info(u"Unable to apply action \"Set Color/White - %s\" to \"%s\" as device not connected" % (actionType, dev.name))
+            return
+
+        if (actionType != 'Standard') and (actionType != 'Waveform'):
+            self.generalLogger.error(u"LIFX 'setColorWhite' for %s - Invalid message type '%s'" % (dev.name, actionType))
+            return
+
+        if actionType == 'Standard':
+            hue = '-'  # Denotes value not set
+            saturation = '-'
+            brightness = '-'
+            kelvin = '-'
+            mode = str(pluginAction.props.get('modeStandard','White'))  # 'Color' or 'White' (Default)
+            if mode == 'White':
+                try:
+                    kelvin = str(pluginAction.props.get('kelvinStandard', '-'))  # Denotes value not set
+                except:
+                    kelvin = '-'
+            elif mode == 'Color':
+                try:
+                    hue = str(pluginAction.props.get('hueStandard', '-'))
+                    saturation = pluginAction.props.get('saturationStandard', '-')  # Denotes value not set
+                except:
+                    hue = '-'
+                    saturation = '-'
+            else:
+                self.generalLogger.error(u"LIFX 'setColorWhite' for %s - Invalid mode '%s'" % (dev.name, mode))
+                return
+
+            try:
+                brightness = str(pluginAction.props.get('brightnessStandard', '-'))  # Denotes value not set
+            except:
+                brightness = '-'
+            try:
+                duration = str(pluginAction.props.get('durationStandard', '-'))
+            except:
+                duration = '-'
+            try:
+                turnOnIfOff = bool(pluginAction.props.get('turnOnIfOff', True))  # Default 'Turn On if Off' to True if missing
+            except:
+                turnOnIfOff = True  # Default 'Turn On if Off' to True if error
+
+
+            self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'STANDARD', [dev.id, turnOnIfOff, mode, hue, saturation, brightness, kelvin, duration]])
+
+            if mode == 'White':
+                if kelvin == '-':
+                    kelvinUi = 'existing'
+                else:
+                    kelvinUi = '%s' % int(kelvin)
+                if brightness == '-':
+                    brightnessUi = 'existing'
+                else:
+                    brightnessUi = '%s' % int(float(brightness))
+                if duration == '-':
+                    durationUi = 'default'
+                else:
+                    durationUi = str(duration)
+                self.generalLogger.info(u"sent \"%s\" set White Level to \"%s\" and White Temperature to \"%s\" with duration of %s seconds" % (dev.name, int(brightnessUi), int(kelvinUi), durationUi))
+            else:
+                if hue == '-':
+                    hueUi = 'existing'
+                else:
+                    hueUi = '%s' % int(float(hue))
+                if saturation == '-':
+                    saturationUi = 'existing'
+                else:
+                    saturationUi = '%s' % int(float(saturation))
+                if brightness == '-':
+                    brightnessUi = 'existing'
+                else:
+                    brightnessUi = '%s' % int(float(brightness))
+                if duration == '-':
+                    durationUi = 'default'
+                else:
+                    durationUi = str(duration)
+
+                self.generalLogger.info(u"sent \"%s\" set Color Level to hue \"%s\", saturation \"%s\" and brightness \"%s\" with duration of %s seconds" % (dev.name, hueUi, saturationUi, brightnessUi, durationUi))
+
+
+            return
+
+
+        # Waveform    
+
+        hue = 0  # Defaulted to avoid error (although not needed)
+        saturation = 100  # Defaulted to avoid error (although not needed)
+        kelvin = 0  # Defaulted to avoid error (although not needed)
+        
+        mode = str(pluginAction.props.get('modeWaveform','White'))  # 'Color' or 'White' (Default)
+        if mode == 'White':
+            try:
+                kelvin = str(pluginAction.props.get('kelvinWaveform', '3500'))  # Default Kelvin to 3500 if missing
+            except:
+                kelvin = '3500'  # Default Kelvin to 3500 if error
+        elif mode == 'Color':
+            try:
+                hue = str(pluginAction.props.get('hueWaveform', '0'))  # Default Hue to 0 (Red) if missing
+                saturation = pluginAction.props.get('saturationWaveform', '100')  # Default Saturation to 100 if missing
+            except:
+                hue = '0'  # Default Hue to 0 (Red) if error
+                saturation = '100'  # Default Saturation to 100 if error
+        try:
+            brightness = str(pluginAction.props.get('brightnessWaveform', '100'))  # Default Brightness to 100 if missing
+        except:
+            brightness = '100'  # Default Brightness to 100 if error
+        try:
+            transient = pluginAction.props.get('transientWaveform', True)  # Default Transient to '1' (Return color to original) if missing
+        except:
+            transient = True  # Default Transient to '1' (Return color to original) if error
+        try:
+            period = str(int(pluginAction.props.get('periodWaveform', 600)))  # Default Period to '500' (milliseconds) if missing
+        except:
+            period = str('700')  # Default Period to '500' (milliseconds) if error
+        try:
+            cycles = str(pluginAction.props.get('cyclesWaveform', '10'))  # Default Cycles to '10' if missing
+        except:
+            cycles = '10'  # Default Cycles to '10' if error
+        try:
+            dutyCycle = str(pluginAction.props.get('dutyCycleWaveform', '0'))  # Default Duty Cycle to '0' (Equal amount of time) if missing
+        except:
+            dutyCycle = '0'  # Default Duty Cycle to '0' (Equal amount of time) if error
+        try:
+            typeWaveform = str(pluginAction.props.get('typeWaveform', '0'))  # Default TYpe of Waveform to '0' (Saw) if missing
+        except:
+            typeWaveform = '0'  # Default TYpe of Waveform to '0' (Saw) if missing
+
+        self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_WAVEFORM, 'WAVEFORM', [dev.id, mode, hue, saturation, brightness, kelvin, transient, period, cycles, dutyCycle, typeWaveform]])
+
+        transientUi = ' Color will be returned to original.' if transient else ''
+        periodUi = '%s' % int(period)
+        cyclesUi = '%s' % int(cycles)
+        if int(dutyCycle) == 0:
+            dutyCycleUi = 'an equal amount of time is spent on the original color and the new color'
+        elif int(dutyCycle) > 0:
+            dutyCycleUi = 'more time is spent on the original color'
+        else:
+            dutyCycleUi = 'more time is spent on the new color'
+        typeWaveformUi = LIFX_WAVEFORMS.get(typeWaveform,'0')
+
+        brightnessUi = '%s' % int(float(brightness))
+
+        if mode == 'White':
+            kelvinUi = '%s' % int(float(kelvin))
+            self.generalLogger.info(u"sent \"%s\" waveform \"%s\" with White Level to \"%s\" and White Temperature to \"%s\" ..." % (dev.name, typeWaveformUi, int(brightnessUi), int(kelvinUi)))
+        else:
+            hueUi = '%s' % int(float(hue))
+            saturationUi = '%s' % int(float(saturation))
+            self.generalLogger.info(u"sent \"%s\" waveform \"%s\" with hue \"%s\", saturation \"%s\" and brightness \"%s\" ..." % (dev.name, typeWaveformUi, hueUi, saturationUi, brightnessUi))
+        self.generalLogger.info(u"  ... period is \"%s\" milliseconds for \"%s\" cycles and %s.%s" % (periodUi, cyclesUi, dutyCycleUi, transientUi))
+
+    def processDiscoverDevices(self, pluginAction):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+            
+        self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_LOW, 'DISCOVERY', []])
+
+
+    def processPresetApply(self, pluginAction, dev):  # Dev is a LIFX Device
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        self.preset = indigo.variables[int(pluginAction.props.get('PresetId'))]
+ 
+        if dev.states['connected'] == False or self.globals['lifx'][dev.id]['started'] == False:
+            self.generalLogger.info(u"Unable to apply Preset \"%s\" to \"%s\" as device not connected" % (self.preset.name, dev.name))
+            return
+
+        self.generalLogger.debug(u"LIFX PLUGIN - processPresetApply [%s]: %s" % (pluginAction.props.get('PresetId'),self.preset.value)) 
+
+        actionType, mode, turnOnIfOff, hue, saturation, brightness, kelvin, duration, transient, period, cycles, dutyCycle, typeWaveform  = self.decodePreset(self.preset.value)
+
+        if actionType == 'Standard':
+            if mode == 'White':
+                if kelvin == '':
+                    kelvin = '-'
+                saturation = '0'
+            elif mode == 'Color':
+                if hue == '':
+                    hue = '-'
+                if saturation == '':
+                    saturation = '-'
+            else:
+                self.generalLogger.error(u"LIFX Preset %s for %s hasn't been applied. %s" % (self.preset.name,dev.name, mode))
+                return 
+            if brightness == '':
+                brightness = '-'
+            if saturation == '':
+                saturation = '-'
+            if duration == '':
+                duration = '-'
+            if pluginAction.props.get('PresetDuration').rstrip() != '':
+                try:
+                    duration = str(int(pluginAction.props.get('PresetDuration')))
+                except:
+                    self.generalLogger.error(u"LIFX Preset %s for %s hasn't been applied. Duration[D] specified in preset is invalid: %s" % (self.preset.name, dev.name, duration))
+                    return 
+
+            if turnOnIfOff != '0' and turnOnIfOff != '1':
+                self.generalLogger.error(u"LIFX Preset %s for %s hasn't been applied. Turn-On-If-Off[ON] specified in preset is invalid: %s" % (self.preset.name, dev.name, turnOnIfOff))
+                return
+
+            turnOnIfOff = False if (turnOnIfOff == '0') else True 
+
+            self.generalLogger.debug(u'LIFX PRESET QUEUE_PRIORITY_COMMAND [STANDARD]; Target for %s: TOIF=%s, Mode=%s, Hue=%s, Saturation=%s, Brightness=%s, Kelvin=%s, Duration=%s' % (dev.name, turnOnIfOff, mode, hue, saturation, brightness, kelvin, duration))   
+
+
+            self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'STANDARD', [dev.id, turnOnIfOff, mode, hue, saturation, brightness, kelvin, duration]])
+
+            if mode == 'White':
+                if kelvin == '-':
+                    kelvinUi = 'existing'
+                else:
+                    kelvinUi = '%s' % int(float(kelvin))
+                if brightness == '-':
+                    brightnessUi = 'existing'
+                else:
+                    brightnessUi = '%s' % int(float(brightness))
+                if duration == '-':
+                    durationUi = 'default'
+                else:
+                    durationUi = str(duration)
+                self.generalLogger.info(u"sent \"%s\" preset of set White Level to \"%s\" and White Temperature to \"%s\" with duration of %s seconds" % (dev.name, int(brightnessUi), int(kelvinUi), durationUi))
+            else:
+                if hue == '-':
+                    hueUi = 'existing'
+                else:
+                    hueUi = '%s' % int(float(hue))
+                if saturation == '-':
+                    saturationUi = 'existing'
+                else:
+                    saturationUi = '%s' % int(float(saturation))
+                if brightness == '-':
+                    brightnessUi = 'existing'
+                else:
+                    brightnessUi = '%s' % int(float(brightness))
+                if duration == '-':
+                    durationUi = 'default'
+                else:
+                    durationUi = str(duration)
+
+                self.generalLogger.info(u"sent \"%s\" set Color Level to hue \"%s\", saturation \"%s\" and brightness \"%s\" with duration of %s seconds" % (dev.name, hueUi, saturationUi, brightnessUi, durationUi))
+
+
+        elif actionType == 'Waveform':
+            if mode == 'White':
+                valid = True
+                if kelvin == '':
+                    valid = False
+                else:
+                    try:
+                        test = int(kelvin)
+                    except ValueError:
+                        valid = False
+                if not valid:
+                    self.generalLogger.error(u"LIFX Preset %s for %s hasn't been applied. Kelvin[K] value specified in preset is invalid: %s" % (self.preset.name, dev.name, kelvin))
+                    return
+            elif mode == 'Color':
+                valid = True
+                if hue == '':
+                    valid = False
+                else:
+                    try:
+                        test = float(hue)
+                    except ValueError:
+                        valid = False
+                if not valid:
+                    self.generalLogger.error(u"LIFX Preset %s for %s hasn't been applied. Hue[H] value specified in preset is invalid: %s" % (self.preset.name, dev.name, hue))
+                    return
+                if saturation == '':
+                    valid = False
+                else:
+                    try:
+                        test = float(saturation)
+                    except ValueError:
+                        valid = False
+                if not valid:
+                    self.generalLogger.error(u"LIFX Preset %s for %s hasn't been applied. Saturation[S] value specified in preset is invalid: %s" % (self.preset.name, dev.name, saturation))
+                    return
+            else:
+                self.generalLogger.error(u"LIFX Preset %s for %s hasn't been applied. %s" % (self.preset.name, dev.name, mode))
+                return 
+
+            valid = True
+            if brightness == '':
+                valid = False
+            else:
+                try:
+                    test = float(brightness)
+                except ValueError:
+                    valid = False
+            if not valid:
+                self.generalLogger.error(u"LIFX Preset %s for %s hasn't been applied. Brightness[B] value specified is preset is invalid: %s" % (self.preset.name, dev.name, brightness))
+                return
+
+            if transient != '0' and transient != '1':
+                self.generalLogger.error(u"LIFX Preset %s for %s hasn't been applied. Transient[T] value specified in preset is invalid: %s" % (self.preset.name, dev.name, transient))
+                return
+
+            valid = True
+            if period == '':
+                valid = False
+            else:
+                try:
+                    test = float(period)
+                except ValueError:
+                    valid = False
+            if not valid:
+                self.generalLogger.error(u"LIFX Preset %s for %s hasn't been applied. Period[P] value specified in preset is invalid: %s" % (self.preset.name, dev.name, period))
+                return
+
+            valid = True
+            if cycles == '':
+                valid = False
+            else:
+                try:
+                    test = int(cycles)
+                except ValueError:
+                    valid = False
+            if not valid:
+                self.generalLogger.error(u"LIFX Preset %s for %s hasn't been applied. cycles[H] value specified in preset is invalid: %s" % (self.preset.name, dev.name, cycles))
+                return
+
+            valid = True
+            if dutyCycle == '':
+                valid = False
+            else:
+                try:
+                    test = int(dutyCycle)
+                except ValueError:
+                    valid = False
+            if not valid:
+                self.generalLogger.error(u"LIFX Preset %s for %s hasn't been applied. Duty Cycle[DC] value specified is preset is invalid: %s" % (self.preset.name, dev.name, dutyCycle))
+                return
+
+            if typeWaveform != '0' and typeWaveform != '1' and typeWaveform != '2' and typeWaveform != '3' and typeWaveform != '4':
+                self.generalLogger.error(u"LIFX Preset %s for %s hasn't been applied. Waveform[W] value specified in preset is invalid: %s" % (self.preset.name, dev.name, typeWaveform))
+                return
+
+            self.generalLogger.debug(u'LIFX PRESET QUEUE_PRIORITY_COMMAND [WAVEFORM]; Target for %s: Mode=%s, Hue=%s, Saturation=%s, Brightness=%s, Kelvin=%s, Transient=%s, Period=%s, Cycles=%s, Duty Cycle=%s, Waveform=%s' % (dev.name, mode, hue, saturation, brightness, kelvin, transient, period, cycles, dutyCycle, typeWaveform))   
+
+            self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_WAVEFORM, 'WAVEFORM', [dev.id, mode, hue, saturation, brightness, kelvin, transient, period, cycles, dutyCycle, typeWaveform]])
+
+            transientUi = ' Color will be returned to original.' if transient else ''
+            periodUi = '%s' % int(period)
+            cyclesUi = '%s' % int(cycles)
+            if int(dutyCycle) == 0:
+                dutyCycleUi = 'an equal amount of time is spent on the original color and the new color'
+            elif int(dutyCycle) > 0:
+                dutyCycleUi = 'more time is spent on the original color'
+            else:
+                dutyCycleUi = 'more time is spent on the new color'
+            typeWaveformUi = LIFX_WAVEFORMS.get(typeWaveform,'0')
+
+            brightnessUi = '%s' % int(float(brightness))
+
+            if mode == 'White':
+                kelvinUi = '%s' % int(float(kelvin))
+                self.generalLogger.info(u"sent \"%s\" waveform \"%s\" with White Level to \"%s\" and White Temperature to \"%s\" ..." % (dev.name, typeWaveformUi, int(brightnessUi), int(kelvinUi)))
+            else:
+                hueUi = '%s' % int(float(hue))
+                saturationUi = '%s' % int(float(saturation))
+                self.generalLogger.info(u"sent \"%s\" preset of waveform \"%s\" with hue \"%s\", saturation \"%s\" and brightness \"%s\" ..." % (dev.name, typeWaveformUi, hueUi, saturationUi, brightnessUi))
+            self.generalLogger.info(u"  ... period is \"%s\" milliseconds for \"%s\" cycles and %s.%s" % (periodUi, cyclesUi, dutyCycleUi, transientUi))
+
+        else:
+            self.generalLogger.error(u"LIFX Preset [%s] hasn't been applied. Action-Type[AT] specified in preset is invalid" % (dev.name)) 
+
+
+    def decodePreset(self, preset):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        actionType = ''
+        turnOnIfOff = ''
+        mode= ''
+        hue = ''
+        saturation = ''
+        brightness = ''
+        kelvin = ''
+        duration = ''
+        transient = ''
+        period = ''
+        cycles = ''
+        dutyCycle = ''
+        waveform = ''
+
+        presetItems = preset.split(",")
+        self.generalLogger.debug(u"LIFX validatePreset-A [%s]" % (presetItems))
+
+        for presetItem in presetItems:
+            self.generalLogger.debug(u"LIFX validatePreset-A [%s]" % (presetItem))
+            
+            presetElement, presetValue = presetItem.split("=")
+            if presetElement == 'AT':
+                if presetValue == 'S':
+                    actionType = 'Standard'
+                elif presetValue == 'W':
+                    actionType = 'Waveform'
+                else:
+                    actionType = 'Preset Invalid LIFX Action Type (AT) in PRESET'
+            if presetElement == 'M':
+                if presetValue == 'W':
+                    mode = 'White'
+                elif presetValue == 'C':
+                    mode = 'Color'
+                else:
+                    mode = 'Preset Invalid LIFX Color/White Mode (M) in PRESET'
+            if presetElement == 'ON':
+                turnOnIfOff = str(presetValue)
+            if presetElement == 'H':
+                hue = str(presetValue)
+            elif presetElement == 'S':
+                saturation = str(presetValue)
+            elif presetElement == 'B':
+                brightness = str(presetValue)
+            elif presetElement == 'K':
+                kelvin = str(presetValue)
+            elif presetElement == 'D':
+                duration = str(presetValue)
+            elif presetElement == 'T':
+                transient = str(presetValue)
+            elif presetElement == 'P':
+                period = str(presetValue)
+            elif presetElement == 'C':
+                cycles = str(presetValue)
+            elif presetElement == 'DC':
+                dutyCycle = str(presetValue)
+            elif presetElement == 'W':
+                waveform = str(presetValue)
+
+        self.generalLogger.debug(u"LIFX Preset: Action Type=%s, Mode=%s, ON= %s, H=%s, K=%s, B=%s, D=%s, T=%s, P=%s, C=%s, DC=%s, W=%s" % (actionType, mode, turnOnIfOff, hue, kelvin, brightness, duration, transient, period, cycles, dutyCycle, waveform))
+
+        return (actionType, mode, turnOnIfOff, hue, saturation, brightness, kelvin, duration, transient, period, cycles, dutyCycle, waveform) 
+
+
+    def processPresetApplyDefineGenerator(self, filter="", valuesDict=None, typeId="", targetId=0):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        preset_dict = []
+        preset_dict.append(("SELECT_PRESET", "- Select Preset -"))
+
+        for preset in indigo.variables.iter():
+            if preset.folderId == self.globals['folders']['VariablesId']:
+                preset_found = (str(preset.id), str(preset.name))
+                preset_dict.append(preset_found)
+
+        myArray = preset_dict
+        return myArray
