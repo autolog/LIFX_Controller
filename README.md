@@ -3,21 +3,21 @@
 ## Introduction
 The Autolog LIFX Controller is a plugin for the Indigo (version 7+) home automation system (http://indigodomo.com) that enables you to control LIFX devices from Indigo. It enables local LAN control of LIFX Devices without having to use an internet connection.
 
-This version of the LIFX Plugin controls LIFX lamps running the V2+ firmware only.
-
 The Version 4 series of the plugin is implemented using Indigo Dimmer Devices to control the LIFX lamps and fully supporting the new built-in RGBW controls in Indigo 7. In addition to the standard controls, the plugin provides a comprehensive action (Set Color/White) to control all aspects of the LIFX device.
 
-It is **strongly recommended** to read this documentation to familiarise yourself with the new way of working which is substantially different to the previous (V1, V2 and V3) versions.
+The plugin makes extensive use of the lifxlan library by Meghan Clark for which much thanks are due :) - see (https://github.com/mclarkk/lifxlan)
+
+It is **strongly recommended** to read this documentation to familiarise yourself with the new way of working which is substantially different to the previous plugin (V1, V2 and V3) versions.
 
 ## Installation
 ### Prerequisites
-This version of the LIFX Plugin controls LIFX lamps running the V2 firmware only.
+This version of the LIFX Plugin controls LIFX lamps. The original LIFX lamps must be running the V2+ firmware. Newer lamp models will be OK for use by the plugin
 The first and most essential installation pre-requisite is that you have some LIFX Lamps updated with the V2 firmware that you control via the iOS LIFX App. This Plugin needs some lamps to control!
 
 The latest version of the plugin has been developed and tested on OS X El Capitan (10.11.6) and also tested on macOS Sierra (10.12.1).
 
 ### Pre-Installation
-**IMPORTANT** - If you are using the existing version of the plugin, then you need to perform the following steps:
+**IMPORTANT** - If you are using the existing version of the plugin, then you need to perform the following steps if you are using your existing LIFX lamps in Control Pages or Avtion Groups:
 
 * **Edit existing LIFX lamp device settings**
     Edit the device settings for each of your existing LIFX bulbs, make sure that the field *Use Indigo Name* is unchecked and if not, uncheck it and Save. The next step will rename the Indigo devices and we don't want the actual LIFX lamps to have their names changed!
@@ -28,8 +28,10 @@ The latest version of the plugin has been developed and tested on OS X El Capita
 * **Disable Existing plugin**
     Now disable the exsting plugin so that it can't intefere with the installation step (see next section).
 
+If you aren't using your existing LIFX lamps in any Control Pages or Action Groups, you can just disable the existing LIFX plugin and then delete the LIFX devices prior to following the Installation steps in the next section.
+
 ### Installation
-Download and install the plugin is normal for Indigo plugins.
+Download and install the plugin as normal for Indigo plugins.
 
 ### Plugin Configuration
 
