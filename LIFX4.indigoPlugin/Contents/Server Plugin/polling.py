@@ -44,8 +44,6 @@ class ThreadPolling(threading.Thread):
 
             self.pollingLogger.debug(u"Polling thread running")  
 
-            #self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_POLLING, 'STATUSPOLLING', 0])  # 1st time
-
             while not self.pollStop.wait(self.globals['polling']['seconds']):
 
                 # Check if monitoring / debug options have changed and if so set accordingly
@@ -67,7 +65,7 @@ class ThreadPolling(threading.Thread):
                         break
                     else:
                         self.pollStop.clear()
-                self.pollingLogger.debug(u"Now polling at %i second intervals" % (self.globals['polling']['seconds']))
+                self.pollingLogger.debug(u"Polling at %i second intervals" % (self.globals['polling']['seconds']))
                 if self.globals['polling']['quiesced'] == False:
 
                     self.globals['polling']['count'] += 1  # Increment polling count
@@ -75,17 +73,18 @@ class ThreadPolling(threading.Thread):
                     # Check if LIFX Lamps are responding to polls
                     noAck = False  # Assume all lights responding
                     for devId in self.globals['lifx']:
-                        dev_poll_check = self.globals['lifx'][devId]['lastResponseToPollCount'] + self.globals['polling']['missedLimit']
-                        self.pollingLogger.debug(u"Dev = '%s', Count = %s, LIFX LastResponse = %s, Missed Limit = %s, Check = %s" % (indigo.devices[devId].name, self.globals['polling']['count'], self.globals['lifx'][devId]['lastResponseToPollCount'], self.globals['polling']['missedLimit'], dev_poll_check))
-                        dev = indigo.devices[devId]
-                        if (dev_poll_check < self.globals['polling']['count']) or (not self.globals['lifx'][devId]['started']):
-                            self.pollingLogger.debug(u"dev_poll_check < self.globals['polling']['count']")
-                            indigo.devices[devId].setErrorStateOnServer(u"no ack")
-                            dev.updateStateOnServer(key='connected', value='false', clearErrorState=False)
-                            noAck = True  #  Indicate at least one light "not acknowledging" 
-                        # else:
-                        #     if not dev.states['connected']:
-                        #         dev.updateStateOnServer(key='connected', value='true')
+                        if ((len(self.globals['debug']['debugFilteredIpAddresses']) == 0) 
+                            or ((len(self.globals['debug']['debugFilteredIpAddresses']) > 0) 
+                                and ('ipAddress' in self.globals['lifx'][devId]) 
+                                and (self.globals['lifx'][devId]['ipAddress'] in self.globals['debug']['debugFilteredIpAddresses']))):
+                            dev_poll_check = self.globals['lifx'][devId]['lastResponseToPollCount'] + self.globals['polling']['missedLimit']
+                            self.pollingLogger.debug(u"Dev = '%s', Count = %s, LIFX LastResponse = %s, Missed Limit = %s, Check = %s" % (indigo.devices[devId].name, self.globals['polling']['count'], self.globals['lifx'][devId]['lastResponseToPollCount'], self.globals['polling']['missedLimit'], dev_poll_check))
+                            dev = indigo.devices[devId]
+                            if (dev_poll_check < self.globals['polling']['count']) or (not self.globals['lifx'][devId]['started']):
+                                self.pollingLogger.debug(u"dev_poll_check < self.globals['polling']['count']")
+                                indigo.devices[devId].setErrorStateOnServer(u"no ack")
+                                dev.updateStateOnServer(key='connected', value='false', clearErrorState=False)
+                                noAck = True  #  Indicate at least one light "not acknowledging" 
                     if noAck:
                         self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_DISCOVERY, 'DISCOVERY', 0])  # Discover devices before polling LIFX devices for status updates
 

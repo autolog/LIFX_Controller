@@ -2,10 +2,10 @@
 <PluginConfig>
     <SupportURL>http://www.yourdomain.com/plugin/ApplianceModule.html</SupportURL>
     <Field id="description" type="label">
-        <Label>This Plugin controls (V2 Firmware) LIFX lamps. 😄</Label>
+        <Label>This Plugin controls LIFX devices. 😄</Label>
     </Field>
     <Field id="copyright" type="label">
-        <Label>Copyright © 2016 Autolog</Label>
+        <Label>Copyright © 2016-2017 Autolog</Label>
     </Field>
 
     <Field id="separator-1" type="separator"/>  
@@ -56,15 +56,30 @@
     </Field>
 
     <Field id="separator-3" type="separator"/>  
+    <Field id="help-4" type="label">
+        <Label>Use Update Check to check for a new release of the LIFX plugin on Github. Use plugin menu to update plugin.</Label>
+    </Field>
+    <Field type="checkbox" id="updateCheck" defaultValue="true" tooltip="Tick to turn on checking for new LIFX plugin version">
+        <Label>Check for updates:</Label>
+        <Description>Enable to check for new version of LIFX plugin.</Description>
+    </Field>
+    <Field id="checkFrequency" type="menu" defaultValue="DAILY" enabledBindingId="updateCheck" tooltip="Select update check frequency">
+        <Label>Check Frequency:</Label>
+        <List>
+            <Option value="DAILY">Check every day</Option>
+            <Option value="WEEKLY">Check every week</Option>
+        </List>
+    </Field>
+    <Field id="separator-4" type="separator"/>  
 
     <Field type="checkbox" id="monitorDebugEnabled" default="false">
         <Label>Monitoring / debugging:</Label>
         <Description>Enable monitoring and debugging options.</Description>
     </Field>
 
-    <Field id="separator-4" type="separator" visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true"/> 
+    <Field id="separator-5" type="separator" visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true"/> 
 
-    <Field id="help-4" type="label" fontColor="darkgray" fontSize="small" alignWithControl="true" visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true">
+    <Field id="help-5" type="label" fontColor="darkgray" fontSize="small" alignWithControl="true" visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true">
         <Label>Select monitoring / debugging to be performed by ticking required option(s) below and then clicking Save.</Label>
     </Field>
     <Field type="checkbox" id="debugGeneral" defaultValue="false"  visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" tooltip="Enable logging of detailed debugging info." alwaysUseInDialogHeightCalc="true">
@@ -88,7 +103,7 @@
         <Description>Debug 'polling' processing.</Description>
     </Field>
 
-    <Field id="separator-5" type="separator" visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true"/> 
+    <Field id="separator-6" type="separator" visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true"/> 
 
     <Field type="textfield" id="debugFilteredIpAddresses" defaultValue="" visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true">
         <Label>LIFX Lamp Filter IP Address(es):</Label>

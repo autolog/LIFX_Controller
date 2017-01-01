@@ -85,7 +85,8 @@ class ThreadSendReceiveMessages(threading.Thread):
                         for lifxDevId in self.globals['lifx']:
                             if self.globals['lifx'][lifxDevId]["started"] == True:
                                 self.sendReceiveDebugLogger.debug(u"Processing %s for %s" % (lifxCommand, indigo.devices[lifxDevId].name))
-                                self.globals['queues']['messageToSend'].put([150, 'STATUS', [lifxDevId]])
+                                self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_STATUS_MEDIUM, 'STATUS', [lifxDevId]])
+                                self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_LOW, 'GETWIFIINFO', [lifxDevId]])
                                  
                         continue  
 
@@ -101,6 +102,20 @@ class ThreadSendReceiveMessages(threading.Thread):
                                 ioStatus, power, hsbk = self.getColor(lifxDev, self.globals['lifx'][lifxDevId]['lifxLanLightObject'])
                                 if ioStatus:
                                     self.updateStatusFromMsg(lifxCommand, lifxDevId, power, hsbk)
+                            props = lifxDev.pluginProps
+                            if ("SupportsInfrared" in props) and props["SupportsInfrared"]:
+                                try:
+                                    infraredBrightness = self.globals['lifx'][lifxDevId]['lifxLanLightObject'].get_infrared()
+                                except IOError, e:
+                                    self.sendReceiveDebugLogger.error(u"SupportsInfrared ERROR detected in LIFX Send Receive Message Thread. Line '%s' has error='%s'" % (sys.exc_traceback.tb_lineno, e))   
+                                    infraredBrightness = 0
+                                    self.communicationLost(lifxDev)
+
+                                IndigoInfraredBrightness = float((infraredBrightness * 100) /  65535)
+                                keyValueList = [
+                                    {'key': 'infraredBrightness', 'value': infraredBrightness},
+                                    {'key': 'indigoInfraredBrightness', 'value': IndigoInfraredBrightness}]
+                                lifxDev.updateStatesOnServer(keyValueList)
 
                         continue
 
@@ -138,6 +153,40 @@ class ThreadSendReceiveMessages(threading.Thread):
                         
                         continue
 
+                    if (lifxCommand == 'INFRARED_ON') or (lifxCommand == 'INFRARED_OFF') or (lifxCommand == 'INFRARED_SET'):
+                        lifxDevId = lifxCommandParameters[0]
+
+                        if self.globals['lifx'][lifxDevId]["started"] == True:
+
+                            self.sendReceiveDebugLogger.debug(u"Processing %s for '%s' " % (lifxCommand, indigo.devices[lifxDevId].name))
+
+                            lifxDev = indigo.devices[lifxDevId]
+
+                            # Clear any outstanding timers
+                            self.clearStatusTimer(lifxDev)
+
+                            if lifxCommand == 'INFRARED_OFF':
+                                infraredBrightness = 0
+                            elif lifxCommand == 'INFRARED_ON':
+                                infraredBrightness = 65535
+                            elif lifxCommand == 'INFRARED_SET':
+                                infraredBrightness = lifxCommandParameters[1]
+                                infraredBrightness = int((infraredBrightness * 65535.0) / 100.0)
+                                if infraredBrightness > 65535:
+                                    infraredBrightness = 65535  # Just in case ;)
+
+                            try:
+                                self.globals['lifx'][lifxDevId]['lifxLanLightObject'].set_infrared(infraredBrightness)
+                                self.sendReceiveDebugLogger.debug(u"Processing %s for '%s'; Infrared Brightness = %s" % (lifxCommand, indigo.devices[lifxDevId].name, infraredBrightness))
+                            except IOError, e:
+                                self.communicationLost(lifxDev)
+                                continue
+
+                            self.globals['deviceTimers'][lifxDevId]['STATUS'] = threading.Timer(1.0, self.handleTimerRepeatingQueuedStatusCommand, [lifxDev, 2])
+                            self.globals['deviceTimers'][lifxDevId]['STATUS'].start()
+                        
+                        continue
+
                     if lifxCommand == 'DISCOVERY_DELAYED':
                         if 'DISCOVERY' in self.globals['discoveryTimer']:
                             self.globals['discoveryTimer']['DISCOVERY'].cancel()
@@ -149,64 +198,70 @@ class ThreadSendReceiveMessages(threading.Thread):
                         self.globals['lifxLanClient'] = LifxLAN(None)  # Discover LIFX Devices
                         self.globals['lifxDevices'] = self.globals['lifxLanClient'].get_lights()
                         for lifxDevice in self.globals['lifxDevices']:
-                            lifxDeviceLabel = str(lifxDevice.get_label()).rstrip()
                             lifxDeviceMacAddr = lifxDevice.mac_addr
                             lifxDeviceIpAddress = lifxDevice.ip_addr
                             lifxDeviceIpPort = lifxDevice.port
-                            self.sendReceiveMonitorLogger.debug(u"LIFX Device '%s' discovered at %s [%s] using Port %s" % (lifxDeviceLabel, lifxDeviceIpAddress, lifxDeviceMacAddr, lifxDeviceIpPort))
+                            self.sendReceiveMonitorLogger.debug(u"LIFX Device discovered at %s [%s] using Port %s" % (lifxDeviceIpAddress, lifxDeviceMacAddr, lifxDeviceIpPort))
 
-                            lifxDeviceMatchedtoIndigoDevice = False
-                            for devId in self.globals['lifx']:
-                                if lifxDevice.mac_addr == self.globals['lifx'][devId]['mac_addr']:
-                                    lifxDeviceMatchedtoIndigoDevice = True
-                                    break
-                            if not lifxDeviceMatchedtoIndigoDevice:
-                                dev = indigo.device.create(protocol=indigo.kProtocol.Plugin,
-                                    address=lifxDeviceMacAddr,
-                                    name=lifxDeviceLabel, 
-                                    description='LIFX Device', 
-                                    pluginId="com.autologplugin.indigoplugin.lifxcontroller",
-                                    deviceTypeId="lifxDevice",
-                                    props={"onBrightensToLast": True, 
-                                           "SupportsColor": True,
-                                           "SupportsRGB": True,
-                                           "SupportsWhite": True,
-                                           "SupportsTwoWhiteLevels": False,
-                                           "SupportsWhiteTemperature": True},
-                                    folder=self.globals['folders']['DevicesId'])
+                            if ((len(self.globals['debug']['debugFilteredIpAddresses']) == 0) 
+                                or ((len(self.globals['debug']['debugFilteredIpAddresses']) > 0) 
+                                    and ('ipAddress' in self.globals['lifx'][lifxDevice.id]) 
+                                    and (lifxDeviceIpAddress in self.globals['debug']['debugFilteredIpAddresses']))):
 
-                                dev.setErrorStateOnServer(u"no ack")  # Default to 'no ack' status
+                                lifxDeviceMatchedtoIndigoDevice = False
+                                for devId in self.globals['lifx']:
+                                    if lifxDevice.mac_addr == self.globals['lifx'][devId]['mac_addr']:
+                                        lifxDeviceMatchedtoIndigoDevice = True
+                                        break
+                                if not lifxDeviceMatchedtoIndigoDevice:
+                                    lifxDeviceLabel = str(lifxDevice.get_label()).rstrip()
+                                    dev = indigo.device.create(protocol=indigo.kProtocol.Plugin,
+                                        address=lifxDeviceMacAddr,
+                                        name=lifxDeviceLabel, 
+                                        description='LIFX Device', 
+                                        pluginId="com.autologplugin.indigoplugin.lifxcontroller",
+                                        deviceTypeId="lifxDevice",
+                                        props={"onBrightensToLast": True, 
+                                               "SupportsColor": True,
+                                               "SupportsRGB": True,
+                                               "SupportsWhite": True,
+                                               "SupportsTwoWhiteLevels": False,
+                                               "SupportsWhiteTemperature": True},
+                                        folder=self.globals['folders']['DevicesId'])
 
-                                self.globals['lifx'][dev.id] = {}
-                                self.globals['lifx'][dev.id]['started']             = False
-                                self.globals['lifx'][dev.id]['initialisedFromlamp'] = False
-                                self.globals['lifx'][dev.id]['mac_addr']            = dev.address         # eg. 'd0:73:d5:0a:bc:de'
-                                # self.globals['lifx'][dev.id]['label']               = lifxDeviceLabel
-                                devId = dev.id
-                                self.sendReceiveMonitorLogger.info(u"New LIFX Device '%s' discovered at %s [%s] using Port %s" % (lifxDeviceLabel, lifxDeviceIpAddress, lifxDeviceMacAddr, lifxDeviceIpPort))
-                            else:
-                                dev = indigo.devices[devId]
-                                if not dev.states['connected']:
-                                    self.sendReceiveMonitorLogger.info(u"LIFX Device '%s' re-connected at %s [%s] using Port %s" % (lifxDeviceLabel, lifxDeviceIpAddress, lifxDeviceMacAddr, lifxDeviceIpPort))
-                                    dev.updateStateImageOnServer(indigo.kStateImageSel.Auto)
-                                    self.globals['lifx'][dev.id]['started'] = True
-                                    self.sendReceiveMonitorLogger.info(u"LIFX Device '%s' started." % (dev.name))
+                                    dev.setErrorStateOnServer(u"no ack")  # Default to 'no ack' status
 
-                                    self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_STATUS_MEDIUM, 'STATUS', [dev.id]])
-                                    self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_LOW, 'GETVERSION', [dev.id]])
-                                    self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_LOW, 'GETHOSTFIRMWARE', [dev.id]])
-                                    self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_LOW, 'GETWIFIFIRMWARE', [dev.id]])
-                                    self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_LOW, 'GETWIFIINFO', [dev.id]])
+                                    self.globals['lifx'][dev.id] = {}
+                                    self.globals['lifx'][dev.id]['started']             = False
+                                    self.globals['lifx'][dev.id]['initialisedFromlamp'] = False
+                                    self.globals['lifx'][dev.id]['mac_addr']            = dev.address         # eg. 'd0:73:d5:0a:bc:de'
+                                    self.globals['lifx'][dev.id]['ipAddress']           = lifxDeviceIpAddress
+                                    devId = dev.id
+                                    self.sendReceiveMonitorLogger.info(u"New LIFX Device '%s' discovered at %s [%s] using Port %s" % (lifxDeviceLabel, lifxDeviceIpAddress, lifxDeviceMacAddr, lifxDeviceIpPort))
+                                else:
+                                    dev = indigo.devices[devId]
+                                    if not dev.states['connected']:
+                                        self.sendReceiveMonitorLogger.info(u"LIFX Device '%s' re-connected at %s [%s] using Port %s" % (dev.name, lifxDeviceIpAddress, lifxDeviceMacAddr, lifxDeviceIpPort))
+                                        dev.updateStateImageOnServer(indigo.kStateImageSel.Auto)
+                                        self.globals['lifx'][dev.id]['started'] = True
+                                        self.sendReceiveMonitorLogger.info(u"LIFX Device '%s' started." % (dev.name))
 
-                            self.globals['lifx'][devId]['lifxLanLightObject']  = Light(lifxDeviceMacAddr, lifxDeviceIpAddress)
-                            self.globals['lifx'][dev.id]['port']  = lifxDeviceIpPort
+                                        self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_STATUS_MEDIUM, 'STATUS', [dev.id]])
+                                        self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_LOW, 'GETVERSION', [dev.id]])
+                                        self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_LOW, 'GETHOSTFIRMWARE', [dev.id]])
+                                        self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_LOW, 'GETWIFIFIRMWARE', [dev.id]])
+                                        self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_LOW, 'GETWIFIINFO', [dev.id]])
+
+                                self.globals['lifx'][devId]['lifxLanLightObject']  = Light(lifxDeviceMacAddr, lifxDeviceIpAddress)
+                                self.globals['lifx'][devId]['port']  = lifxDeviceIpPort
 
                         # Now check if further discovery required
                         discoveryRequired = False
                         for devId in self.globals['lifx']:
-                            if indigo.devices[devId].errorState == 'no ack':
-                                discoveryRequired = True
-                                break
+                            if (len(self.globals['debug']['debugFilteredIpAddresses']) > 0) and ('ipAddress' in self.globals['lifx'][devId]) and (self.globals['lifx'][devId]['ipAddress'] in self.globals['debug']['debugFilteredIpAddresses']):
+                                if indigo.devices[devId].errorState == 'no ack':
+                                    discoveryRequired = True
+                                    break
                         if self.globals['discoveryCount'] < START_UP_REQUIRED_DISCOVERY_COUNT: 
                             self.globals['discoveryCount'] += 1
                             discoveryRequired = True
@@ -215,7 +270,7 @@ class ThreadSendReceiveMessages(threading.Thread):
 
                         continue
 
-                    if lifxCommand == 'BRIGHTNESS':
+                    if (lifxCommand == 'BRIGHTNESS') or (lifxCommand == 'DIM_BRIGHTEN_BY_ONE'):
                         lifxDevId = lifxCommandParameters[0]
 
                         if self.globals['lifx'][lifxDevId]["started"] == True:
@@ -248,13 +303,16 @@ class ThreadSendReceiveMessages(threading.Thread):
                                 else:
                                     # White
                                     brightness = int(newBrightness)
-                                hsbk = [hue, saturation, brightness, kelvin]
-                                duration = int(self.globals['lifx'][lifxDevId]['durationDimBrighten'] * 1000)
-
-                                self.sendReceiveDebugLogger.debug(u'LIFX COMMAND [BRIGHTNESS]; SET-COLOR for %s: Hue=%s, Saturation=%s, Brightness=%s, Kelvin=%s' % (indigo.devices[lifxDevId].name,  hue, saturation, brightness, kelvin))   
 
                                 if newBrightness > 0 and power == 0:
-                                    # Need to turn on LIFX device
+                                    # Need to reset existing brightness to 0 before turning on
+                                    try:
+                                        hsbkWithBrightnessZero = [hue, saturation, 0, kelvin]
+                                        self.globals['lifx'][lifxDevId]['lifxLanLightObject'].set_color(hsbkWithBrightnessZero, 0)
+                                    except IOError, e:
+                                        self.communicationLost(lifxDev)
+                                        continue
+                                    # Need to turn on LIFX device as currently off
                                     power = 65535
                                     try:
                                         self.globals['lifx'][lifxDevId]['lifxLanLightObject'].set_power(power, 0)
@@ -262,16 +320,25 @@ class ThreadSendReceiveMessages(threading.Thread):
                                         self.communicationLost(lifxDev)
                                         continue
 
+                                hsbk = [hue, saturation, brightness, kelvin]
+                                if lifxCommand == 'BRIGHTNESS':
+                                    duration = int(self.globals['lifx'][lifxDevId]['durationDimBrighten'] * 1000)
+                                else:
+                                    duration = 0
+
+                                self.sendReceiveDebugLogger.debug(u'LIFX COMMAND [BRIGHTNESS]; SET-COLOR for %s: Hue=%s, Saturation=%s, Brightness=%s, Kelvin=%s' % (indigo.devices[lifxDevId].name,  hue, saturation, brightness, kelvin))   
+
                                 try:
                                     self.globals['lifx'][lifxDevId]['lifxLanLightObject'].set_color(hsbk, duration)
                                 except IOError, e:
                                     self.communicationLost(lifxDev)
                                     continue
 
-                                timerDuration = int(self.globals['lifx'][lifxDevId]['durationDimBrighten'])
-                                self.globals['deviceTimers'][lifxDevId]['STATUS'] = threading.Timer(1.0, self.handleTimerRepeatingQueuedStatusCommand, [lifxDev, timerDuration])
+                                if lifxCommand == 'BRIGHTNESS':
+                                    timerDuration = int(self.globals['lifx'][lifxDevId]['durationDimBrighten'])
+                                    self.globals['deviceTimers'][lifxDevId]['STATUS'] = threading.Timer(1.0, self.handleTimerRepeatingQueuedStatusCommand, [lifxDev, timerDuration])
 
-                                self.globals['deviceTimers'][lifxDevId]['STATUS'].start()
+                                    self.globals['deviceTimers'][lifxDevId]['STATUS'].start()
 
                         continue
 
@@ -296,6 +363,22 @@ class ThreadSendReceiveMessages(threading.Thread):
 
                                 self.sendReceiveDebugLogger.debug(u'LIFX COMMAND [WHITE]; GET-COLOR for %s: Hue=%s, Saturation=%s, Brightness=%s, Kelvin=%s' % (indigo.devices[lifxDevId].name,  hue, saturation, brightness, kelvin))   
 
+                                if power == 0 and self.globals['lifx'][lifxDevId]['turnOnIfOff']:
+                                    # Need to reset existing brightness to 0 before turning on
+                                    try:
+                                        hsbkWithBrightnessZero = [hue, saturation, 0, kelvin]
+                                        self.globals['lifx'][lifxDevId]['lifxLanLightObject'].set_color(hsbkWithBrightnessZero, 0)
+                                    except IOError, e:
+                                        self.communicationLost(lifxDev)
+                                        continue
+                                    # Need to turn on LIFX device as currently off
+                                    power = 65535
+                                    try:
+                                        self.globals['lifx'][lifxDevId]['lifxLanLightObject'].set_power(power, 0)
+                                    except IOError, e:
+                                        self.communicationLost(lifxDev)
+                                        continue
+                                        
                                 saturation = 0
                                 brightness = int((targetWhiteLevel * 65535.0) / 100.0)
                                 kelvin = int(targetWhiteTemperature)
@@ -336,6 +419,22 @@ class ThreadSendReceiveMessages(threading.Thread):
                                 kelvin = hsbk[3]
 
                                 self.sendReceiveDebugLogger.debug(u'LIFX COMMAND [COLOR]; GET-COLOR for %s: Hue=%s, Saturation=%s, Brightness=%s, Kelvin=%s' % (indigo.devices[lifxDevId].name,  hue, saturation, brightness, kelvin))   
+
+                                if power == 0 and self.globals['lifx'][dev.id]['turnOnIfOff']:
+                                    # Need to reset existing brightness to 0 before turning on
+                                    try:
+                                        hsbkWithBrightnessZero = [hue, saturation, 0, kelvin]
+                                        self.globals['lifx'][lifxDevId]['lifxLanLightObject'].set_color(hsbkWithBrightnessZero, 0)
+                                    except IOError, e:
+                                        self.communicationLost(lifxDev)
+                                        continue
+                                    # Need to turn on LIFX device as currently off
+                                    power = 65535
+                                    try:
+                                        self.globals['lifx'][lifxDevId]['lifxLanLightObject'].set_power(power, 0)
+                                    except IOError, e:
+                                        self.communicationLost(lifxDev)
+                                        continue
 
                                 hue = targetHue
                                 saturation = targetSaturation
@@ -540,14 +639,35 @@ class ThreadSendReceiveMessages(threading.Thread):
 
                             self.sendReceiveDebugLogger.debug(u"PRODUCT for '%s' = '%s'" % (indigo.devices[lifxDevId].name, product))
 
+                            productFound = False
                             try:
-                                model = str('%s' % (LIFX_PRODUCTS[product]))  # Defined in constants.py
+                                model = str('%s' % (LIFX_PRODUCTS[product][LIFX_PRODUCT_NAME]))  # Defined in constants.py
+                                productFound = True
                             except KeyError:
                                 model = str('LIFX Product - %s' % (product))
 
                             if lifxDev.model != model:
                                 lifxDev.model = model
                                 lifxDev.replaceOnServer()
+
+                            if productFound:
+                                props = lifxDev.pluginProps
+                                propsChanged = False
+                                if ("SupportsColor" not in props) or (props["SupportsColor"] != bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_COLOR])):
+                                    props["SupportsColor"] = True  # Applies even if just able to change White Levels / Temperature
+                                    props["SupportsRGB"] = bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_COLOR])
+                                    propsChanged = True
+                                if ("SupportsRGB" not in props) or (props["SupportsRGB"] != bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_COLOR])):
+                                    props["SupportsRGB"] = bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_COLOR])
+                                    propsChanged = True
+                                if ("SupportsInfrared" not in props) or (props["SupportsInfrared"] != bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_INFRARED])):
+                                    props["SupportsInfrared"] = bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_INFRARED])
+                                    propsChanged = True
+                                if ("SupportsMultizone" not in props) or (props["SupportsMultizone"] != bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_MULTIZONE])):
+                                    props["SupportsMultizone"] = bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_MULTIZONE])
+                                    propsChanged = True
+                                if propsChanged:
+                                    lifxDev.replacePluginPropsOnServer(props)
 
                         continue
 
@@ -867,32 +987,17 @@ class ThreadSendReceiveMessages(threading.Thread):
 
             self.sendReceiveDebugLogger.debug(u'LAMP IP ADDRESS [%s] vs DEBUG FILTERED IP ADDRESS [%s]' % (self.globals['lifx'][lifxDevId]['ipAddress'], self.globals['debug']['debugFilteredIpAddresses']))
 
-                    # if self.globals['debug']['debugFilteredIpAddresses'] != '':  #    ################################### ≤====================== CHECK THIS OUT: 15TH NOVEMBER 2016
-                    #     self.globals['lifx'][lifxDevId]['label'] = str("%s" % (lampPayload[12:44].rstrip(' \t\r\n\0')))
-                    #     if lifxDev.name != self.globals['lifx'][lifxDevId]['label']:
-                    #         if bool(lifxDev.pluginProps.get('setLifxLabelFromIndigoDeviceName', False)) == True:  # Only change LIFX Lamp label if option set
-                    #             self.sendReceiveDebugLogger.info(u"Changing LIFX Lamp label from '%s' to '%s'" % (self.globals['lifx'][lifxDevId]['label'], lifxDev.name))
-                    #             self.globals['queues']['messageToSend'].put(['SETLABEL', lifxDev])
-                    #             self.globals['lifx'][lifxDevId]['label'] = lifxDev.name
-
             self.sendReceiveDebugLogger.debug(u"  LIGHT_STATE = Power: %s" % (self.globals['lifx'][lifxDevId]['powerLevel']))
             self.sendReceiveDebugLogger.debug(u"  LIGHT_STATE = onState: %s" % (self.globals['lifx'][lifxDevId]['onState']))
             self.sendReceiveDebugLogger.debug(u"  LIGHT_STATE = onOffState: %s" % (self.globals['lifx'][lifxDevId]['onOffState']))
 
-
-                    # At this point we have an Indigo device id for the lamp and can confirm that the indigo device has been started
+            # At this point we have an Indigo device id for the lamp and can confirm that the indigo device has been started
 
             self.globals['lifx'][lifxDevId]['lastResponseToPollCount'] = self.globals['polling']['count']  # Set the current poll count (for 'no ack' check)
             self.sendReceiveDebugLogger.debug(u'LAST RESPONSE TO POLL COUNT for %s = %s' % (lifxDev.name, self.globals['polling']['count']))
 
 
             self.globals['lifx'][lifxDevId]['initialisedFromlamp'] = True
-
-            # if lifxDev.name != self.globals['lifx'][lifxDevId]['label']:
-            #     if bool(lifxDev.pluginProps.get('setLifxLabelFromIndigoDeviceName', False)) == True:  # Only change LIFX Lamp label if option set
-            #         self.sendReceiveDebugLogger.info(u"Changing LIFX Lamp label from '%s' to '%s'" % (self.globals['lifx'][lifxDevId]['label'], lifxDev.name))
-            #         self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'SETLABEL', lifxDev])
-            #         self.globals['lifx'][lifxDevId]['label'] = lifxDev.name
 
             if self.globals['lifx'][lifxDevId]['onState'] == True:
                 self.globals['lifx'][lifxDevId]['whenLastOnHsbkHue']        = self.globals['lifx'][lifxDevId]['hsbkHue']         # Value between 0 and 65535
@@ -969,9 +1074,6 @@ class ThreadSendReceiveMessages(threading.Thread):
                 {'key': 'whenLastOnHsbkKelvin', 'value': self.globals['lifx'][lifxDevId]['whenLastOnHsbkKelvin']},
                 {'key': 'whenLastOnPowerLevel', 'value': self.globals['lifx'][lifxDevId]['whenLastOnPowerLevel']},
 
-                {'key': 'redLevel', 'value': self.globals['lifx'][lifxDevId]['indigoRed']},
-                {'key': 'greenLevel', 'value': self.globals['lifx'][lifxDevId]['indigoGreen']},
-                {'key': 'blueLevel', 'value': self.globals['lifx'][lifxDevId]['indigoBlue']},
                 {'key': 'whiteTemperature', 'value': self.globals['lifx'][lifxDevId]['indigoKelvin']},
                 {'key': 'whiteLevel', 'value': self.globals['lifx'][lifxDevId]['indigoWhiteLevel']},
 
@@ -991,6 +1093,12 @@ class ThreadSendReceiveMessages(threading.Thread):
                 {'key': 'connected', 'value': True}
 
             ]
+
+            props = lifxDev.pluginProps
+            if ("SupportsRGB" in props) and props["SupportsRGB"]:
+                keyValueList.append({'key': 'redLevel', 'value': self.globals['lifx'][lifxDevId]['indigoRed']})
+                keyValueList.append({'key': 'greenLevel', 'value': self.globals['lifx'][lifxDevId]['indigoGreen']})
+                keyValueList.append({'key': 'blueLevel', 'value': self.globals['lifx'][lifxDevId]['indigoBlue']})
 
             lifxDev.updateStatesOnServer(keyValueList)
 

@@ -5,6 +5,10 @@
 		<Name>LIFX Device</Name>
 
         <ConfigUI>
+            <Field id="turnOnIfOff" type="checkbox" default="true">
+                <Label>Turn On if Off:</Label>
+                <Description>Turn device on if off, when altering values.</Description>
+            </Field>
             <Field type="checkbox" id="setLifxLabelFromIndigoDeviceName" defaultValue="false" hidden="false">
                 <Label>Use Indigo Name:</Label>
                 <Description>Set LIFX Device label from Indigo device name.</Description>
@@ -78,6 +82,11 @@
                 <ControlPageLabel>Power Level</ControlPageLabel>
             </State>
 
+            <State id="infraredBrightness">
+                <ValueType>Number</ValueType>
+                <TriggerLabel>Infrared Brightness</TriggerLabel>
+                <ControlPageLabel>Infrared Brightness</ControlPageLabel>
+            </State>
 
             <!-- LIFX native values when last on -->
             <State id="whenLastOnHsbkHue">
@@ -142,7 +151,13 @@
             <State id="indigoPowerLevel">
                 <ValueType>Number</ValueType>
                 <TriggerLabel>Power Level [100]</TriggerLabel>
-                <ControlPageLabel>ower Level [100]</ControlPageLabel>
+                <ControlPageLabel>Power Level [100]</ControlPageLabel>
+            </State>
+
+            <State id="indigoInfraredBrightness">
+                <ValueType>Number</ValueType>
+                <TriggerLabel>Infrared Brightness [100]</TriggerLabel>
+                <ControlPageLabel>Infrared Brightness [100]</ControlPageLabel>
             </State>
 
             <!-- durations to affect commands over -->

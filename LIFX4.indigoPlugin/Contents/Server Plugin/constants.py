@@ -21,16 +21,25 @@ QUEUE_PRIORITY_LOW           = 700
 
 # LIFX product constants
 LIFX_PRODUCTS = {}
-LIFX_PRODUCTS[1] = 'Original 1000'
-LIFX_PRODUCTS[3] = 'Color 650'
-LIFX_PRODUCTS[10] = 'White 800 (Low Voltage)'
-LIFX_PRODUCTS[11] = 'White 800 (High Voltage)'
-LIFX_PRODUCTS[18] = 'White 900 BR30 (Low Voltage)'
-LIFX_PRODUCTS[20] = 'Color 1000 BR30'
-LIFX_PRODUCTS[22] = 'Color 1000'
-LIFX_PRODUCTS[25] = 'LIFX + A19'
-LIFX_PRODUCTS[26] = 'LIFX + BR30'
-LIFX_PRODUCTS[31] = 'LIFX Z'
+#                    Color, Infrared, Multizone, Name
+LIFX_PRODUCTS[1]  = (True,  False, False, 'Original 1000')
+LIFX_PRODUCTS[3]  = (True,  False, False, 'Color 650')
+LIFX_PRODUCTS[10] = (False, False, False, 'White 800 (Low Voltage)')
+LIFX_PRODUCTS[11] = (False, False, False, 'White 800 (High Voltage)')
+LIFX_PRODUCTS[18] = (False, False, False, 'White 900 BR30 (Low Voltage)')
+LIFX_PRODUCTS[20] = (True,  False, False, 'Color 1000 BR30')
+LIFX_PRODUCTS[22] = (True,  False, False, 'Color 1000')
+LIFX_PRODUCTS[27] = (True,  False, False, 'LIFX A19')
+LIFX_PRODUCTS[28] = (True,  False, False, 'LIFX BR30')
+LIFX_PRODUCTS[29] = (True,  True,  False, 'LIFX + A19')
+LIFX_PRODUCTS[30] = (True,  True,  False, 'LIFX + BR30')
+LIFX_PRODUCTS[31] = (True,  False, True,  'LIFX Z')
+
+LIFX_PRODUCT_SUPPORTS_COLOR = 0
+LIFX_PRODUCT_SUPPORTS_INFRARED = 1
+LIFX_PRODUCT_SUPPORTS_MULTIZONE = 2
+LIFX_PRODUCT_NAME = 3
+
 
 # LIFX Waveform Types
 LIFX_WAVEFORMS = {}

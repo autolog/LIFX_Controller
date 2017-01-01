@@ -14,7 +14,7 @@ It is **strongly recommended** to read this documentation to familiarise yoursel
 This version of the LIFX Plugin controls LIFX lamps. The original LIFX lamps must be running the V2+ firmware. Newer lamp models will be OK for use by the plugin
 The first and most essential installation pre-requisite is that you have some LIFX Lamps updated with the V2 firmware that you control via the iOS LIFX App. This Plugin needs some lamps to control!
 
-The latest version of the plugin has been developed and tested on OS X El Capitan (10.11.6) and also tested on macOS Sierra (10.12.1).
+The latest version of the plugin has been developed and tested on OS X El Capitan (10.11.6) and also tested on macOS Sierra (10.12.2).
 
 ### Pre-Installation
 **IMPORTANT** - If you are using the existing version of the plugin, then you need to perform the following steps if you are using your existing LIFX lamps in Control Pages or Avtion Groups:
@@ -50,12 +50,35 @@ The plugin configuration dialogue has a number of options:
 * **Default Durations **
     Specifies separate default durations to be used if not otherwise specified (See the description of these duration settings in the Device Configuration section)
 
+* **Update Check**
+    Use Update Check to check for a new release of the LIFX plugin on Github. Use plugin menu (see later) to update plugin.
+    Check tick box to enable checks for updates and select frequency (daily or weekly).
+
 * **Monitoring / debugging**
     These options are to support monitoring and debugging. All logging is now done to Indigo 7 standards and to a separate file that can be accessed by clicking on the Show Events Logs Folder button in the Indigo Event Log window. The log file is *plugin.log* in the *com.autologplugin.indigoplugin.lifxcontroller* folder. This folder also contains date stamped logs from the previous five days.
     Logging is not normally required but can be useful for fault finding and debugging.
 
 * **LIFX Lamp Filter IP Address (es)**
     Used to filter the processing to one or more lamps (mainly for testing and debugging purposes). If a LIFX lamp's IP address is specified, any messages sent to or received from other lamps not in the list will be ignored. If you send a command (e.g. Turn On) to another lamp while the filter is active, then this will cause an error warning message to be displayed in the Indigo Event log.
+
+### Plugin Menu
+
+
+![Plugin Menu](readme_md_images/plugin_menu.png "Plugin Menu")
+
+The plugin menu, in addition to the standard items, has additional items for update checking:
+
+* **Check for Plugin Update**
+
+    Select this item to perform an immediate check for a plugin update
+
+* **Update Plugin**
+
+    Select this item to perform a plugin update. The update will only proceed if there is a newer version available.
+
+* **Force Plugin**
+
+    Select this item to force a plugin update. The update will effectively refresh the current version if there isn't a newer one available or update to a newer one if there is.
 
 ### Device Configuration
 
@@ -76,22 +99,32 @@ Once a LIFX Lamp device has been created, you can *Edit Device Settings…*
 
 The configuration options are:
 
+* **Turn On if Off**
+
+    If this option is ticked then the Plugin will turn on a device when altering values through the Indigo UI. This is on by default. By leaving unticked it is possible to change the LIFX lamp settings while the LIFX lamp is off which can be useful if you want to setup the LIFX device prior to turning it on.
+
 * **Use Indigo Name **
+
     If this option is ticked then the Plugin will update the LIFX Lamp label (as shown in the LIFX iOS App) from the Indigo device Name. So typically to use this, you would first change the Indigo LIFX Lamp device name to your preferred choice and then Edit the device settings, tick this box and then Save. The LIFX Lamp’s lable (name) will then be updated with the Indigo device name and this name will now be shown in the iOS LIFX App. This option is useful if you haven’t Claimed the LIFX lamp and associated it with your online LIFX account as you can’t normally rename the lamp otherwise. With this option ticked, whenever you change the Indigo LIFX device name, the LIFX Lamp label will be changed. 
 
 * **Override Default Plugin Durations **
+
     If this option is ticked then it reveals a list of durations to set for this individual LIFX lamp that will override the default global plugin durations. You can set durations (measured in seconds) for:
 
     * **Dim / Brighten Duration **
+
     How long the LIFX lamp will take to dim or brighten when you alter the brightness
 
     * **Turn On Duration **
+
     How long the LIFX lamp will take to reach the target brightness when you turn it on
 
    * **Turn Off Duration **
+
     How long the LIFX lamp will take to turn off
 
     * **Color / White Duration **
+
     How long the LIFX lamp will take to reach the target Color/White settings when you use the plugin’s *Set Color / White* action
 
 ## Usage
@@ -220,10 +253,13 @@ The LIFX lamps can be controlled using the built-in standard Indigo Device Actio
 
 ### LIFX Actions
 
-The Plugin provides three additional actions under *'LIFX Actions’*:
-* Discover LIFX Devices
+The Plugin provides six additional actions under *'LIFX Actions’*:
 * Set Color / White
 * Apply Preset
+* Turn On Infrared
+* Turn Off Infrared
+* Set Infrared Brightness
+* Discover LIFX Devices
 
 #### Discover LIFX Devices
     Running this action will cause the plugin to try and discover LIFX devices on the local network. When new LIFX devices are found, the plugin will create a new Indigo LIFX device in the LIFX folder.
@@ -462,7 +498,7 @@ In this case, the Preset being selected is an existing Waveform Preset. Clicking
 
 Note if the Preset selected was a Standard Preset (rather than Waveform), the main dialogue above would be changed from Waveform input fileds to Standard input fields.
 
-#### Save 
+##### Save 
 
 Finally, the whole object of the exercise is to save the Action Group. So click Save to do this. Remember to Save even if you have already saved a new Preset or updated an existing Preset using the Preset Options, otherwise your settings won't get saved into the Action Group.
 
@@ -474,7 +510,20 @@ This action executes a predefined Preset.
 
 Select the required Preset and optionally, specify a required duration (in seconds). Note that Duration will only be used if the Preset is executing a Standard action, it is ignored for Waveform actions. If not specified then the default duration will be used.
 
-Click the *Save* button to save the settings and then *O*K to save the Action.
+Click the *Save* button to save the settings and then *OK* to save the Action.
+
+#### Turn On Infrared (Action)
+
+This action sets the maximum infrared brightness to 100%. Note that this only tells the LIFX device what the maximum infrared brightness is to be used when it decides to turn on the infrared. From the LIFX Documentation: "When the brightness of the primary channels drops below a certain threshold the bulb will turn on the Infrared channel. In the future other metrics such as ambient light levels and the overall temperature of the bulb may also be used to adjust the Infrared channel.".
+
+#### Turn Off Infrared (Action)
+
+This action sets the maximum infrared brightness to 0% (zero). This effectively disables infrared on the LIFX device.
+
+#### Set Infrared Brightness (Action)
+
+This action enables you to specify a value between 0.0 and 100.0 for the maximum brightness the LIFX device will use for infrared when it decides to turn it on. See note above on *Turn On Infrared (Action)*.
+
 
 ### States
 The plugin provides the following states:

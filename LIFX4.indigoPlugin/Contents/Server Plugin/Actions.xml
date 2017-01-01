@@ -547,11 +547,28 @@
             <Field id="PresetDurationHelp" type="label" fontColor="darkgray" fontSize="mini" alignWithControl="true">
                 <Label>^ Duration (in seconds) will only be used if the Preset is executing a Standard action. It is ignored for Waveform actions.</Label>
             </Field>
-
-
         </ConfigUI>
     </Action>
 
+    <Action id="turnOnInfrared" deviceFilter="self.lifxDevice">
+        <Name>Turn On Infrared</Name>
+        <CallbackMethod>turnOnInfrared</CallbackMethod>
+    </Action>
+
+    <Action id="turnOffInfrared" deviceFilter="self.lifxDevice">
+        <Name>Turn Off Infrared</Name>
+        <CallbackMethod>turnOffInfrared</CallbackMethod>
+    </Action>
+
+    <Action id="setInfraredBrightness" deviceFilter="self.lifxDevice">
+        <Name>Set Infrared Brightness</Name>
+        <CallbackMethod>setInfraredBrightness</CallbackMethod>
+        <ConfigUI>
+            <Field id="infraredBrightness" type="textfield" defaultValue="100">
+                <Label>Infrared Brightness:</Label>
+            </Field>
+        </ConfigUI>
+    </Action>
     <Action id="discoverDevices">
         <Name>Discover LIFX Devices</Name>
         <CallbackMethod>processDiscoverDevices</CallbackMethod>

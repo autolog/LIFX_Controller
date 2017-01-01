@@ -10,12 +10,16 @@ try:
     import indigo
 except:
     pass
+import locale
 import logging
+import os
 import Queue
 import re
 import threading
+from time import localtime, time, sleep, strftime
 
 from constants import *
+from ghpu import GitHubPluginUpdater
 from lifxlan.lifxlan import *
 from polling import ThreadPolling
 from sendReceiveMessages import ThreadSendReceiveMessages
@@ -102,23 +106,38 @@ class Plugin(indigo.PluginBase):
         self.globals['constant'] = {}
         self.globals['constant']['defaultDatetime'] = datetime.strptime("2000-01-01","%Y-%m-%d")
 
+        # Initialise dictionary for update checking
+        self.globals['update'] = {}
+
         self.validatePrefsConfigUi(pluginPrefs)  # Validate the Plugin Config
         
-        self.setDebuggingLevels(pluginPrefs)  # Check monitoring / debug / filered IP address options 
+        self.setDebuggingLevels(pluginPrefs)  # Check monitoring / debug / filered IP address options
 
     def __del__(self):
 
         indigo.PluginBase.__del__(self)
 
+    def updatePlugin(self):
+        self.globals['update']['updater'].update()
+
+    def checkForUpdates(self):
+        self.globals['update']['updater'].checkForUpdate()
+
+    def forceUpdate(self):
+        self.globals['update']['updater'].update(currentVersion='0.0.0')
+
+    def checkRateLimit(self):
+        limiter = self.globals['update']['updater'].getRateLimit()
+        indigo.server.log('RateLimit {limit:%d remaining:%d resetAt:%d}' % limiter)
+
     def startup(self):
         self.methodTracer.threaddebug(u"CLASS: Plugin")
 
-        # Initialise validation flags - Used to ensure thread safe processing 
-        self.validateDeviceFlags = {}
-        self.validateActionFlags = {}
+        # Set-up update checker
+        self.globals['update']['updater'] = GitHubPluginUpdater(self)
+        self.globals['update']['nextCheckTime'] = time()
 
         # Create LIFX folder name in variables (for presets) and devices (for lamps)
-
         folderName = "LIFX"
         if folderName not in indigo.variables.folders:
             folder = indigo.variables.folder.create(folderName)
@@ -140,7 +159,7 @@ class Plugin(indigo.PluginBase):
             self.globals['lifx'][dev.id]['initialisedFromlamp'] = False
             self.globals['lifx'][dev.id]['mac_addr']            = dev.address         # eg. 'd0:73:d5:0a:bc:de'
             self.globals['lifx'][dev.id]['lifxLanLightObject']  = None
-            # self.globals['lifx'][dev.id]['label']               = dev.name
+            self.globals['lifx'][dev.id]['lastResponseToPollCount'] = 0 
             dev.setErrorStateOnServer(u"no ack")  # Default to 'no ack' status
 
 
@@ -181,7 +200,7 @@ class Plugin(indigo.PluginBase):
                 self.globals['lifx'][dev.id]['initialisedFromlamp'] = False
                 self.globals['lifx'][dev.id]['mac_addr']            = dev.address         # eg. 'd0:73:d5:0a:bc:de'
                 self.globals['lifx'][dev.id]['lifxLanLightObject']  = None
-                # self.globals['lifx'][dev.id]['label']               = lifxDeviceLabel
+                self.globals['lifx'][dev.id]['ipAddress']           = lifxDeviceIpAddress
                 devId = dev.id
 
             self.globals['lifx'][devId]['lifxLanLightObject']  = Light(lifxDeviceMacAddr, lifxDeviceIpAddress)
@@ -226,13 +245,21 @@ class Plugin(indigo.PluginBase):
 
         try: 
 
+            if "updateCheck" in valuesDict:
+                self.globals['update']['check'] = bool(valuesDict["updateCheck"])
+            else:
+                self.globals['update']['check'] = False
+
+            # No need to validate this as value can only be selected from a pull down list?
+            if "checkFrequency" in valuesDict:
+                self.globals['update']['checkFrequency'] = valuesDict.get("checkFrequency", 'DAILY')
+
             if "statusPolling" in valuesDict:
                 self.globals['polling']['status'] = bool(valuesDict["statusPolling"])
             else:
                 self.globals['polling']['status'] = False
 
             # No need to validate this as value can only be selected from a pull down list?
-
             if "pollingSeconds" in valuesDict:
                 self.globals['polling']['seconds'] = float(valuesDict["pollingSeconds"])
             else:
@@ -319,6 +346,14 @@ class Plugin(indigo.PluginBase):
 
         if userCancelled == True:
             return
+
+        if self.globals['update']['check']:
+            if self.globals['update']['checkFrequency'] == 'WEEKLY':
+                self.globals['update']['checkTimeIncrement'] = (7 * 24 * 60 * 60)  # In seconds
+            else:
+                # DAILY 
+                self.globals['update']['checkTimeIncrement'] = (24 * 60 * 60)  # In seconds
+
 
         # Check monitoring / debug / filered IP address options  
         self.setDebuggingLevels(valuesDict)
@@ -450,10 +485,22 @@ class Plugin(indigo.PluginBase):
     def runConcurrentThread(self):
         self.methodTracer.threaddebug(u"CLASS: Plugin")
 
-        # This thread is used to detect plugin close down only
+        # This thread is used to detect plugin close down and check for updates
         try:
+            self.sleep(5) # in seconds - Allow startup to complete
             while True:
+                if self.globals['update']['check']:
+                    if time() > self.globals['update']['nextCheckTime']:
+                        if not 'checkTimeIncrement' in self.globals['update']:
+                            self.globals['update']['checkTimeIncrement'] = (24 * 60 * 60)  # One Day In seconds
+                        self.globals['update']['nextCheckTime'] = time() + self.globals['update']['checkTimeIncrement']
+                        self.generalLogger.info(u"Autolog 'LIFX V4 Controller' checking for Plugin update")
+                        self.globals['update']['updater'].checkForUpdate()
+
+                        nextCheckTime = strftime('%A, %Y-%b-%d at %H:%M', localtime(self.globals['update']['nextCheckTime']))
+                        self.generalLogger.info(u"Autolog 'LIFX V4 Controller' next update check scheduled for: %s" % nextCheckTime)
                 self.sleep(60) # in seconds
+
         except self.StopThread:
             self.generalLogger.info(u"Autolog 'LIFX V4 Controller' Plugin shutdown requested")
 
@@ -533,9 +580,9 @@ class Plugin(indigo.PluginBase):
                 self.globals['lifx'][dev.id]['ipAddress']            = self.globals['lifx'][dev.id]['lifxLanLightObject'].ip_addr  # e.g. 192.168.1.nnn
                 self.globals['lifx'][dev.id]['port']                 = self.globals['lifx'][dev.id]['lifxLanLightObject'].port  # e.g. 56700
 
-            # self.globals['lifx'][dev.id]['label']                    = dev.name
             self.globals['lifx'][dev.id]['onState']                  = False      # True or False
             self.globals['lifx'][dev.id]['onOffState']               = 'off'      # 'on' or 'off'
+            self.globals['lifx'][dev.id]['turnOnIfOff']              = bool(dev.pluginProps.get('turnOnIfOff', True))
 
             hsbk = (0,0,0,3500)
 
@@ -614,9 +661,6 @@ class Plugin(indigo.PluginBase):
                 {'key': 'indigoKelvin', 'value': self.globals['lifx'][dev.id]['indigoKelvin']},
                 {'key': 'indigoPowerLevel', 'value': self.globals['lifx'][dev.id]['indigoPowerLevel']},
 
-                {'key': 'redLevel', 'value': self.globals['lifx'][dev.id]['indigoRed']},
-                {'key': 'greenLevel', 'value': self.globals['lifx'][dev.id]['indigoGreen']},
-                {'key': 'blueLevel', 'value': self.globals['lifx'][dev.id]['indigoBlue']},
                 {'key': 'whiteTemperature', 'value': self.globals['lifx'][dev.id]['indigoKelvin']},
                 {'key': 'whiteLevel', 'value': self.globals['lifx'][dev.id]['indigoBrightness']},
 
@@ -625,9 +669,14 @@ class Plugin(indigo.PluginBase):
                 {'key': 'durationOn', 'value': self.globals['lifx'][dev.id]['durationOn']},
                 {'key': 'durationOff', 'value': self.globals['lifx'][dev.id]['durationOff']},
                 {'key': 'durationColorWhite', 'value': self.globals['lifx'][dev.id]['durationColorWhite']},
-                {'key': 'connected', 'value': False}
+                {'key': 'connected', 'value': False}]
 
-            ]
+            props = dev.pluginProps
+            if ("SupportsRGB" in props) and props["SupportsRGB"]:
+                keyValueList.append({'key': 'redLevel', 'value': self.globals['lifx'][dev.id]['indigoRed']})
+                keyValueList.append({'key': 'greenLevel', 'value': self.globals['lifx'][dev.id]['indigoGreen']})
+                keyValueList.append({'key': 'blueLevel', 'value': self.globals['lifx'][dev.id]['indigoBlue']})
+
             dev.updateStatesOnServer(keyValueList)
 
             if self.globals['lifx'][dev.id]['lifxLanLightObject'] == None:
@@ -680,88 +729,56 @@ class Plugin(indigo.PluginBase):
 
         self.currentTime = indigo.server.getTime()
 
-        self.validateDeviceFlags[devId] = {}
-
         if "overrideDefaultPluginDurations" in valuesDict and valuesDict["overrideDefaultPluginDurations"] == True:
 
             # Validate 'defaultDurationDimBrighten' value
-            self.validateDeviceFlags[devId]['defaultDurationDimBrighten'] = True  # False = Invalid, True = Valid
-            defaultDurationDimBrighten = valuesDict["defaultDurationDimBrighten"].rstrip().lstrip()
-            if defaultDurationDimBrighten != "":
-                try:
-                    self.validateField = float(defaultDurationDimBrighten)
-                    if self.validateField < 0.0 or self.validateField > 3600.0:
-                        self.validateDeviceFlags[devId]['defaultDurationDimBrighten'] = False  # Not in valid range
-                except:
-                    self.validateDeviceFlags[devId]['defaultDurationDimBrighten'] = False   # Not numeric
-
-                if self.validateDeviceFlags[devId]['defaultDurationDimBrighten'] == False:
-                    errorDict = indigo.Dict()
-                    errorDict["defaultDurationDimBrighten"] = "Default duration for dimming and brightness must be set between 0.0 and 3600 (inclusive)"
-                    errorDict["showAlertText"] = "You must enter a valid Default Duration for dimming and brightness value for the LIFX lamp. It must be a number between 0.0 and 3600 (inclusive)"
-                    return (False, valuesDict, errorDict)
-                else:
-                    valuesDict["defaultDurationDimBrighten"] = defaultDurationDimBrighten 
+            defaultDurationDimBrighten = valuesDict.get("defaultDurationDimBrighten", '1.0').rstrip().lstrip()
+            try:
+                if float(defaultDurationDimBrighten) <= 0.0:
+                    raise ValueError('DefaultDurationDimBrighten must be greater than zero')
+                valuesDict["defaultDurationDimBrighten"] = '%.1f' % float(defaultDurationDimBrighten)
+            except:
+                errorDict = indigo.Dict()
+                errorDict["defaultDurationDimBrighten"] = "Default duration for dimming and brightness must be greater than zero"
+                errorDict["showAlertText"] = "You must enter a valid Default Duration for dimming and brightness value for the LIFX lamp. It must be greater than zero"
+                return (False, valuesDict, errorDict)
 
             # Validate 'defaultDurationOn' value
-            self.validateDeviceFlags[devId]['defaultDurationOn'] = True  # False = Invalid, True = Valid
-            defaultDurationOn = valuesDict["defaultDurationOn"].rstrip().lstrip()
-            if defaultDurationOn != "":
-                try:
-                    self.validateField = float(defaultDurationOn)
-                    if self.validateField < 0.0 or self.validateField > 3600.0:
-                        self.validateDeviceFlags[devId]['defaultDurationOn'] = False  # Not in valid range
-                except:
-                    self.validateDeviceFlags[devId]['defaultDurationOn'] = False   # Not numeric
-
-                if self.validateDeviceFlags[devId]['defaultDurationOn'] == False:
-                    errorDict = indigo.Dict()
-                    errorDict["defaultDurationOn"] = "Default Turn On duration must be set between 0.0 and 3600 (inclusive)"
-                    errorDict["showAlertText"] = "You must enter a valid Default Turn On Duration value for the LIFX lamp. It must be a number between 0.0 and 3600 (inclusive)"
-                    return (False, valuesDict, errorDict)
-                else:
-                    valuesDict["defaultDurationOn"] = defaultDurationOn
+            defaultDurationOn = valuesDict.get("defaultDurationOn", '1.0').rstrip().lstrip()
+            try:
+                if float(defaultDurationOn) <= 0.0:
+                    raise ValueError('DefaultDurationOn must be greater than zero')
+                valuesDict["defaultDurationOn"] = '%.1f' % float(defaultDurationOn)
+            except:
+                errorDict = indigo.Dict()
+                errorDict["defaultDurationOn"] = "Default Turn On duration must be greater than zero"
+                errorDict["showAlertText"] = "You must enter a valid Default Turn On Duration value for the LIFX lamp. It must be greater than zero"
+                return (False, valuesDict, errorDict)
 
             # Validate 'defaultDurationOff' value
-            self.validateDeviceFlags[devId]['defaultDurationOff'] = True  # False = Invalid, True = Valid
-            defaultDurationOff = valuesDict["defaultDurationOff"].rstrip().lstrip()
-            if defaultDurationOff != "":
-                try:
-                    self.validateField = float(defaultDurationOff)
-                    if self.validateField < 0.0 or self.validateField > 3600.0:
-                        self.validateDeviceFlags[devId]['defaultDurationOff'] = False  # Not in valid range
-                except:
-                    self.validateDeviceFlags[devId]['defaultDurationOff'] = False   # Not numeric
+            defaultDurationOff = valuesDict.get("defaultDurationOff", '1.0').rstrip().lstrip()
+            try:
+                if float(defaultDurationOff) <= 0.0:
+                    raise ValueError('DefaultDurationOff must be greater than zero')
+                valuesDict["defaultDurationOff"] = '%.1f' % float(defaultDurationOff)
+            except:
+                errorDict = indigo.Dict()
+                errorDict["defaultDurationOff"] = "Default Turn Off duration must be greater than zero"
+                errorDict["showAlertText"] = "You must enter a valid Default Turn Off Duration value for the LIFX lamp. It must be greater than zero"
+                return (False, valuesDict, errorDict)
 
-                if self.validateDeviceFlags[devId]['defaultDurationOff'] == False:
-                    errorDict = indigo.Dict()
-                    errorDict["defaultDurationOff"] = "Default Turn Off duration must be set between 0.0 and 3600 (inclusive)"
-                    errorDict["showAlertText"] = "You must enter a valid Default Turn Off Duration value for the LIFX lamp. It must be a number between 0.0 and 3600 (inclusive)"
-                    return (False, valuesDict, errorDict)
-                else:
-                    valuesDict["defaultDurationOff"] = defaultDurationOff
+            # Validate 'defaultDurationColorWhite' value
+            defaultDurationColorWhite = valuesDict.get("defaultDurationColorWhite", '1.0').rstrip().lstrip()
+            try:
+                if float(defaultDurationColorWhite) <= 0.0:
+                    raise ValueError('DefaultDurationColorWhite must be greater than zero')
+                valuesDict["defaultDurationColorWhite"] = '%.1f' % float(defaultDurationColorWhite)
+            except:
+                errorDict = indigo.Dict()
+                errorDict["defaultDurationColorWhite"] = "Default Set Color/White duration must be greater than zero"
+                errorDict["showAlertText"] = "You must enter a valid Default Set Color/White Duration value for the LIFX lamp. It must be greater than zero"
+                return (False, valuesDict, errorDict)
 
-            # Validate 'defaultDurationColorWhite ' value
-            self.validateDeviceFlags[devId]['defaultDurationColorWhite'] = True  # False = Invalid, True = Valid
-            defaultDurationColorWhite = valuesDict["defaultDurationColorWhite"].rstrip().lstrip()
-            if defaultDurationColorWhite != "":
-                try:
-                    self.validateField = float(defaultDurationColorWhite)
-                    if self.validateField < 0.0 or self.validateField > 3600.0:
-                        self.validateDeviceFlags[devId]['defaultDurationColorWhite'] = False  # Not in valid range
-                except:
-                    self.validateDeviceFlags[devId]['defaultDurationColorWhite'] = False   # Not numeric
-
-                if self.validateDeviceFlags[devId]['defaultDurationColorWhite'] == False:
-                    errorDict = indigo.Dict()
-                    errorDict["defaultDurationColorWhite"] = "Default Set Color/White duration must be set between 0.0 and 3600 (inclusive)"
-                    errorDict["showAlertText"] = "You must enter a valid Default Set Color/White Duration value for the LIFX lamp. It must be a number between 0.0 and 3600 (inclusive)"
-                    return (False, valuesDict, errorDict)
-                else:
-                    valuesDict["defaultDurationColorWhite"] = defaultDurationColorWhite
-
-        self.validateDeviceFlags.clear()
- 
         return (True, valuesDict)
 
 
@@ -921,8 +938,6 @@ class Plugin(indigo.PluginBase):
                 else:
                     try:
                         hueStandard = '%.1f' % float(hueStandard)
-                        if float(hueStandard) < 0.0:
-                            raise ValueError('Hue must be a positive number')
                         if float(hueStandard) < 0.0 or float(hueStandard) > 360.0:
                             raise ValueError('Hue must be set between 0.0 and 360.0 (inclusive)')
                         valuesDict["hueStandard"] = hueStandard
@@ -985,6 +1000,10 @@ class Plugin(indigo.PluginBase):
                     errorDict["brightnessStandard"] = "Brightness must be set between 0.0 and 100.0 (inclusive) or '-' (dash) to not set value"
                     errorDict["showAlertText"] = "You must enter a valid Brightness value for the LIFX device. It must be a value between 0.0 and 100.0 (inclusive) or '-' (dash) to leave an existing value unchanged"
                     return (False, valuesDict, errorDict)
+
+
+
+
 
             # Validate 'durationStandard' value
             durationStandard = valuesDict["durationStandard"].rstrip().lstrip()
@@ -1762,69 +1781,50 @@ class Plugin(indigo.PluginBase):
         self.methodTracer.threaddebug(u"CLASS: Plugin")
 
         preset = ""
-        countOfValuesInPreset = 0
 
         if valuesDict["actionType"] == 'Standard':
+            if bool(valuesDict["turnOnIfOffStandard"]):
+                turnOnIfOffStandard = '1'
+            else:
+                turnOnIfOffStandard = '0'
+            preset = preset + ",ON=" + turnOnIfOffStandard
             if valuesDict["modeStandard"] == 'White':
                 if valuesDict["kelvinStandard"].rstrip() != '':
-                    countOfValuesInPreset += 1
                     preset = preset + ",K=" + valuesDict["kelvinStandard"].rstrip()
             elif valuesDict["modeStandard"] == 'Color':
                 if valuesDict["hueStandard"].rstrip() != '':
-                    countOfValuesInPreset += 1
                     preset = preset + ",H=" + valuesDict["hueStandard"].rstrip()
                 if valuesDict["saturationStandard"].rstrip() != '':
-                    countOfValuesInPreset += 1
                     preset = preset + ",S=" + valuesDict["saturationStandard"].rstrip()
             if valuesDict["brightnessStandard"].rstrip() != '':
-                countOfValuesInPreset += 1
                 preset = preset + ",B=" + valuesDict["brightnessStandard"].rstrip()
         elif  valuesDict["actionType"] == 'Waveform':
             if valuesDict["modeWaveform"] == 'White':
                 if valuesDict["kelvinWaveform"].rstrip() != '':
-                    countOfValuesInPreset += 1
                     preset = preset + ",K=" + valuesDict["kelvinWaveform"].rstrip()
             elif valuesDict["modeWaveform"] == 'Color':
                 if valuesDict["hueWaveform"].rstrip() != '':
-                    countOfValuesInPreset += 1
                     preset = preset + ",H=" + valuesDict["hueWaveform"].rstrip()
                 if valuesDict["saturationWaveform"].rstrip() != '':
-                    countOfValuesInPreset += 1
                     preset = preset + ",S=" + valuesDict["saturationWaveform"].rstrip()
             if valuesDict["brightnessWaveform"].rstrip() != '':
-                countOfValuesInPreset += 1
                 preset = preset + ",B=" + valuesDict["brightnessWaveform"].rstrip()
-
-            if valuesDict["transientWaveform"]:
-                transientWaveform = '1'
-            else:
-                transientWaveform = '0'
-            countOfValuesInPreset += 1
+            transientWaveform = '1' if bool(valuesDict["transientWaveform"]) else '0'   
             preset = preset + ",T=" + transientWaveform
             if valuesDict["periodWaveform"].rstrip() != '':
-                countOfValuesInPreset += 1
                 preset = preset + ",P=" + valuesDict["periodWaveform"].rstrip()
             if valuesDict["cyclesWaveform"].rstrip() != '':
-                countOfValuesInPreset += 1
                 preset = preset + ",C=" + valuesDict["cyclesWaveform"].rstrip()
             if valuesDict["dutyCycleWaveform"].rstrip() != '':
-                countOfValuesInPreset += 1
                 preset = preset + ",DC=" + valuesDict["dutyCycleWaveform"].rstrip()
             if valuesDict["typeWaveform"].rstrip() != '':
-                countOfValuesInPreset += 1
                 preset = preset + ",W=" + valuesDict["typeWaveform"].rstrip()
 
         if len(preset) > 0:
             if valuesDict["actionType"] == 'Waveform':
-                if valuesDict["modeWaveform"] == 'White':
-                    prefix = 'AT=W,M=W,'
-                else:
-                    prefix = 'AT=W,M=C,'
+                prefix = 'AT=W,M=W,' if valuesDict["modeWaveform"] == 'White' else 'AT=W,M=C,'
             else:
-                if valuesDict["modeStandard"] == 'White':
-                    prefix = 'AT=S,M=W,'
-                else:
-                    prefix = 'AT=S,M=C,'
+                prefix = 'AT=S,M=W,' if valuesDict["modeStandard"] == 'White' else 'AT=S,M=C,'
             preset = prefix + preset[1:]  # Remove leading ',' from preset
 
         return preset
@@ -1888,16 +1888,19 @@ class Plugin(indigo.PluginBase):
                 newBrightness = 100
             self._processBrightnessSet(action, dev, newBrightness)
             self.generalLogger.info(u"sent \"%s\" %s to %d" % (dev.name, "brighten", newBrightness))
-            dev.updateStateOnServer("brightnessLevel", newBrightness)
 
         ###### DIM BY ######
         elif action.deviceAction ==indigo.kDeviceAction.DimBy:
             newBrightness = dev.brightness - action.actionValue  #  action.actionValue contains brightness decrease value (0 - 100)
             if newBrightness < 0:
                 newBrightness = 0
+            # if action.actionValue == 1:
+            #     self.generalLogger.info(u"ACTION VALUE for = 1 for %s, newBrightness = %s" % (dev.name, newBrightness))
+            #     self._processBrightnessAlterByOne(action, dev, newBrightness)
+            #     dev.updateStateOnServer("brightnessLevel", newBrightness)
+            # else:
             self._processBrightnessSet(action, dev, newBrightness)
             self.generalLogger.info(u"sent \"%s\" %s to %d" % (dev.name, "dim", newBrightness))
-            dev.updateStateOnServer("brightnessLevel", newBrightness)
 
         ###### SET COLOR LEVELS ######
         elif action.deviceAction ==indigo.kDeviceAction.SetColorLevels:
@@ -1938,6 +1941,22 @@ class Plugin(indigo.PluginBase):
             actionUi = "toggle from 'on' to 'off'"
             self._processTurnOff(pluginAction, dev, actionUi)
 
+    def _processBrightnessAlterByOne(self, pluginAction, dev, newBrightness):  # Dev is a LIFX Lamp
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        duration = self.globals['lifx'][dev.id]['durationDimBrighten']
+        if newBrightness > 0:
+            if newBrightness > dev.brightness:
+                actionUi = 'brighten'
+            else:
+                actionUi = 'dim'  
+            self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'DIM_BRIGHTEN_BY_ONE', [dev.id, newBrightness]])
+            self.generalLogger.info(u"sent \"%s\" %s to %s with duration of %s seconds" % (dev.name, actionUi, newBrightness, duration))
+        else:
+            self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'OFF', [dev.id]])
+            self.generalLogger.info(u"sent \"%s\" %s with duration of %s seconds" % (dev.name, 'dim to off'))
+
+
     def _processBrightnessSet(self, pluginAction, dev, newBrightness):  # Dev is a LIFX Lamp
         self.methodTracer.threaddebug(u"CLASS: Plugin")
 
@@ -1951,7 +1970,7 @@ class Plugin(indigo.PluginBase):
             self.generalLogger.info(u"sent \"%s\" %s to %s with duration of %s seconds" % (dev.name, actionUi, newBrightness, duration))
         else:
             self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'OFF', [dev.id]])
-            self.generalLogger.info(u"sent \"%s\" %s with duration of %s seconds" % (dev.name, 'dim to off', duration))
+            self.generalLogger.info(u"sent \"%s\" %s with duration of %s seconds" % (dev.name, 'dim to off'))
 
 
     def _processSetColorLevels(self, action, dev):
@@ -1960,41 +1979,27 @@ class Plugin(indigo.PluginBase):
         try:
             self.generalLogger.debug(u'processSetColorLevels ACTION:\n%s ' % action)
 
-            redLevel = float(dev.states['redLevel'])
-            greenLevel = float(dev.states['greenLevel'])
-            blueLevel = float(dev.states['blueLevel'])
-            whiteLevel = float(dev.states['whiteLevel'])
-            whiteTemperature =  int(dev.states['whiteTemperature'])
-
-
-            if 'whiteLevel' in action.actionValue:
-                whiteLevel = float(action.actionValue['whiteLevel'])
                 
-            if 'whiteTemperature' in action.actionValue:
-                whiteTemperature = int(action.actionValue['whiteTemperature'])
-                if whiteTemperature < 2500:
-                    whiteTemperature = 2500
-                elif whiteTemperature > 9000:
-                    whiteTemperature = 9000
-                
-            if 'redLevel' in action.actionValue:
-                redLevel = float(action.actionValue['redLevel'])
-            if 'greenLevel' in action.actionValue:
-                greenLevel = float(action.actionValue['greenLevel'])
-            if 'blueLevel' in action.actionValue:
-                blueLevel = float(action.actionValue['blueLevel'])
-
             duration = str(self.globals['lifx'][dev.id]['durationColorWhite'])
 
             if ('whiteLevel' in action.actionValue) or ('whiteTemperature' in action.actionValue):
                 # If either of 'whiteLevel' or 'whiteTemperature' are altered - assume mode is White
 
-                # self.generalLogger.debug(u'WHITE LEVEL TYPE = %s, WHITE LEVEL = %s' % (type(whiteLevel), whiteLevel))
+                whiteLevel = float(dev.states['whiteLevel'])
+                whiteTemperature =  int(dev.states['whiteTemperature'])
+
+                if 'whiteLevel' in action.actionValue:
+                    whiteLevel = float(action.actionValue['whiteLevel'])
+                    
+                if 'whiteTemperature' in action.actionValue:
+                    whiteTemperature = int(action.actionValue['whiteTemperature'])
+                    if whiteTemperature < 2500:
+                        whiteTemperature = 2500
+                    elif whiteTemperature > 9000:
+                        whiteTemperature = 9000
 
                 kelvin = min(LIFX_KELVINS, key=lambda x:abs(x - whiteTemperature))
                 rgb, kelvinDescription = LIFX_KELVINS[kelvin]
-
-
 
                 self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'WHITE', [dev.id, whiteLevel, kelvin]])
 
@@ -2002,33 +2007,106 @@ class Plugin(indigo.PluginBase):
 
             else:
                 # As neither of 'whiteTemperature' or 'whiteTemperature' are set - assume mode is Colour
-                self.generalLogger.debug(u"sent \"%s\" Red = %s[%s], Green = %s[%s], Blue = %s[%s]" % (dev.name, redLevel, int(redLevel * 2.56), greenLevel, int(greenLevel * 2.56), blueLevel, int(blueLevel * 2.56)))
 
-                # Convert Indigo values for rGB (0-100) to colorSys values (0.0-1.0)
-                red = float(redLevel / 100.0)         # e.g. 100.0/100.0 = 1.0
-                green = float(greenLevel / 100.0)     # e.g. 70.0/100.0 = 0.7
-                blue = float(blueLevel / 100.0)       # e.g. 40.0/100.0 = 0.4
+                props = dev.pluginProps
+                if ("SupportsRGB" in props) and props["SupportsRGB"]:  # Check device supports color
+                    redLevel = float(dev.states['redLevel'])
+                    greenLevel = float(dev.states['greenLevel'])
+                    blueLevel = float(dev.states['blueLevel'])
+ 
+                    if 'redLevel' in action.actionValue:
+                        redLevel = float(action.actionValue['redLevel'])
+                    if 'greenLevel' in action.actionValue:
+                        greenLevel = float(action.actionValue['greenLevel'])
+                    if 'blueLevel' in action.actionValue:
+                        blueLevel = float(action.actionValue['blueLevel'])
 
-                hsv_hue, hsv_saturation, hsv_brightness = colorsys.rgb_to_hsv(red, green, blue)
+                    self.generalLogger.debug(u"sent \"%s\" Red = %s[%s], Green = %s[%s], Blue = %s[%s]" % (dev.name, redLevel, int(redLevel * 2.56), greenLevel, int(greenLevel * 2.56), blueLevel, int(blueLevel * 2.56)))
 
-                # Convert colorsys values for HLS (0.0-1.0) to H (0-360), L aka B (0.0 -100.0) and S (0.0 -100.0)
-                hue = int(hsv_hue * 65535.0)
-                brightness = int(hsv_brightness * 65535.0)
-                saturation = int(hsv_saturation * 65535.0)
+                    # Convert Indigo values for rGB (0-100) to colorSys values (0.0-1.0)
+                    red = float(redLevel / 100.0)         # e.g. 100.0/100.0 = 1.0
+                    green = float(greenLevel / 100.0)     # e.g. 70.0/100.0 = 0.7
+                    blue = float(blueLevel / 100.0)       # e.g. 40.0/100.0 = 0.4
 
-                self.generalLogger.debug(u"ColorSys: \"%s\" R, G, B: %s, %s, %s = H: %s[%s], S: %s[%s], B: %s[%s]" % (dev.name, red, green, blue, hue, hsv_hue, saturation, hsv_saturation, brightness, hsv_brightness))
+                    hsv_hue, hsv_saturation, hsv_brightness = colorsys.rgb_to_hsv(red, green, blue)
 
-                self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'COLOR', [dev.id, hue, saturation, brightness]])
+                    # Convert colorsys values for HLS (0.0-1.0) to H (0-360), L aka B (0.0 -100.0) and S (0.0 -100.0)
+                    hue = int(hsv_hue * 65535.0)
+                    brightness = int(hsv_brightness * 65535.0)
+                    saturation = int(hsv_saturation * 65535.0)
 
-                hueUi = '%s' % int(((hue  * 360.0) / 65535.0))
-                saturationUi = '%s' % int(((saturation  * 100.0) / 65535.0))
-                brightnessUi = '%s' % int(((brightness  * 100.0) / 65535.0))
+                    self.generalLogger.debug(u"ColorSys: \"%s\" R, G, B: %s, %s, %s = H: %s[%s], S: %s[%s], B: %s[%s]" % (dev.name, red, green, blue, hue, hsv_hue, saturation, hsv_saturation, brightness, hsv_brightness))
 
-                self.generalLogger.info(u"sent \"%s\" set Color Level to hue \"%s\", saturation \"%s\" and brightness \"%s\" with duration of %s seconds" % (dev.name, hueUi, saturationUi, brightnessUi, duration))
+                    self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'COLOR', [dev.id, hue, saturation, brightness]])
+
+                    hueUi = '%s' % int(((hue  * 360.0) / 65535.0))
+                    saturationUi = '%s' % int(((saturation  * 100.0) / 65535.0))
+                    brightnessUi = '%s' % int(((brightness  * 100.0) / 65535.0))
+
+                    self.generalLogger.info(u"sent \"%s\" set Color Level to hue \"%s\", saturation \"%s\" and brightness \"%s\" with duration of %s seconds" % (dev.name, hueUi, saturationUi, brightnessUi, duration))
+                else:
+                    self.generalLogger.info(u"Failed to send \"%s\" set Color Level as device does not support color." % (dev.name))
+
 
         except StandardError, e:
             self.generalLogger.error(u"StandardError detected during processSetColorLevels. Line '%s' has error='%s'" % (sys.exc_traceback.tb_lineno, e))
 
+
+    def turnOnInfrared(self, pluginAction, dev):  # Dev is a LIFX Lamp
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        if dev is None:
+            self.generalLogger.info(u"No LIFX device selected in Action - request to Turn On infrared ignored")
+            return
+
+        props = dev.pluginProps
+        if ("SupportsInfrared" not in props) or (not props["SupportsInfrared"]):
+            self.generalLogger.info(u"LIFX device \"%s\" does not support infrared - request to Turn On infrared ignored" % (dev.name))
+            return
+            
+        self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'INFRARED_ON', [dev.id]])
+        self.generalLogger.info(u"sent \"%s\" turn on infrared" % (dev.name))
+           
+
+    def turnOffInfrared(self, pluginAction, dev):  # Dev is a LIFX Lamp
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        if dev is None:
+            self.generalLogger.info(u"No LIFX device selected in Action - request to Turn Off infrared ignored")
+            return
+
+        props = dev.pluginProps
+        if ("SupportsInfrared" not in props) or (not props["SupportsInfrared"]):
+            self.generalLogger.info(u"LIFX device \"%s\" does not support infrared - request to Turn Off infrared ignored" % (dev.name))
+            return
+            
+        self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'INFRARED_OFF', [dev.id]])
+        self.generalLogger.info(u"sent \"%s\" turn off infrared" % (dev.name))
+
+
+    def setInfraredBrightness(self, pluginAction, dev):  # Dev is a LIFX Lamp
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        if dev is None:
+            self.generalLogger.info(u"No LIFX device selected in Action - request to set infrared brightness ignored")
+            return
+
+        props = dev.pluginProps
+        if ("SupportsInfrared" not in props) or (not props["SupportsInfrared"]):
+            self.generalLogger.info(u"LIFX device \"%s\" does not support infrared - request to set infrared brightness ignored" % (dev.name))
+            return
+
+        try:
+            infraredBrightness = float(pluginAction.props.get('infraredBrightness', 100.0))
+        except:
+            errorInfraredBrightness = pluginAction.props.get('infraredBrightness', 'NOT SPECIFIED')
+            self.generalLogger.error(u"Failed to set infrared maximum brightness for \"%s\" value '%s' is invalid." % (dev.name, errorInfraredBrightness))
+            return
+
+        self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'INFRARED_SET', [dev.id, infraredBrightness]])
+
+        infraredBrightnessUi = '%s' % int(float(infraredBrightness))
+        self.generalLogger.info(u"sent \"%s\" set infrared maximum brightness to %s" % (dev.name, infraredBrightnessUi))
 
     def setColorWhite(self, pluginAction, dev):  # Dev is a LIFX Lamp
         self.methodTracer.threaddebug(u"CLASS: Plugin")
@@ -2426,7 +2504,7 @@ class Plugin(indigo.PluginBase):
         self.generalLogger.debug(u"LIFX validatePreset-A [%s]" % (presetItems))
 
         for presetItem in presetItems:
-            self.generalLogger.debug(u"LIFX validatePreset-A [%s]" % (presetItem))
+            self.generalLogger.debug(u"LIFX validatePreset-B [%s]" % (presetItem))
             
             presetElement, presetValue = presetItem.split("=")
             if presetElement == 'AT':
@@ -2445,7 +2523,7 @@ class Plugin(indigo.PluginBase):
                     mode = 'Preset Invalid LIFX Color/White Mode (M) in PRESET'
             if presetElement == 'ON':
                 turnOnIfOff = str(presetValue)
-            if presetElement == 'H':
+            elif presetElement == 'H':
                 hue = str(presetValue)
             elif presetElement == 'S':
                 saturation = str(presetValue)
@@ -2466,7 +2544,38 @@ class Plugin(indigo.PluginBase):
             elif presetElement == 'W':
                 waveform = str(presetValue)
 
-        self.generalLogger.debug(u"LIFX Preset: Action Type=%s, Mode=%s, ON= %s, H=%s, K=%s, B=%s, D=%s, T=%s, P=%s, C=%s, DC=%s, W=%s" % (actionType, mode, turnOnIfOff, hue, kelvin, brightness, duration, transient, period, cycles, dutyCycle, waveform))
+        # handle presets from previous versions
+
+        if (actionType == '') and (mode == ''):  # Might be from previous version of plugin?
+            # check for waveform
+            if (transient == 'False') or (transient == 'True'):
+                # Is an old style Waveform preset, so adjust accordingly
+                if transient == 'False':
+                    transient = '0'
+                else:
+                    transient = '1'
+                actionType = 'Waveform'
+                if kelvin != '':
+                    mode = 'White'
+                else:
+                    mode = 'Color'
+                    if saturation == '':
+                        saturation = '100'
+            else:
+                # Is probably old style Standard preset, so adjust accordingly
+                actionType = 'Standard'
+                if kelvin != '':
+                    mode = 'White'
+                else:
+                    mode = 'Color'
+                    if saturation == '':
+                        saturation = '100'
+        # Now check that turnOnIfOff, if not default to '1' = True
+        if actionType == 'Standard':
+            if turnOnIfOff == '':
+                turnOnIfOff = '1'
+
+        self.generalLogger.debug(u"LIFX Preset: Action Type=%s, Mode=%s, ON=%s, H=%s, K=%s, B=%s, D=%s, T=%s, P=%s, C=%s, DC=%s, W=%s" % (actionType, mode, turnOnIfOff, hue, kelvin, brightness, duration, transient, period, cycles, dutyCycle, waveform))
 
         return (actionType, mode, turnOnIfOff, hue, saturation, brightness, kelvin, duration, transient, period, cycles, dutyCycle, waveform) 
 
