@@ -1,5 +1,12 @@
 # Release Notes
 
+## Version 4.0.5
+
+* **Bug Fix**
+
+Fix error with not enough parameters being passed to info message when
+setting brightness value.
+
 ## Version 4.0.4
 
 Enhanced in V4.0.4 (1st January 2017)
