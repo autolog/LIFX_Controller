@@ -1954,7 +1954,7 @@ class Plugin(indigo.PluginBase):
             self.generalLogger.info(u"sent \"%s\" %s to %s with duration of %s seconds" % (dev.name, actionUi, newBrightness, duration))
         else:
             self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'OFF', [dev.id]])
-            self.generalLogger.info(u"sent \"%s\" %s with duration of %s seconds" % (dev.name, 'dim to off'))
+            self.generalLogger.info(u"sent \"%s\" %s with duration of %s seconds" % (dev.name, 'dim to off'), duration)
 
 
     def _processBrightnessSet(self, pluginAction, dev, newBrightness):  # Dev is a LIFX Lamp
@@ -1970,7 +1970,7 @@ class Plugin(indigo.PluginBase):
             self.generalLogger.info(u"sent \"%s\" %s to %s with duration of %s seconds" % (dev.name, actionUi, newBrightness, duration))
         else:
             self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'OFF', [dev.id]])
-            self.generalLogger.info(u"sent \"%s\" %s with duration of %s seconds" % (dev.name, 'dim to off'))
+            self.generalLogger.info(u"sent \"%s\" %s with duration of %s seconds" % (dev.name, 'dim to off', duration))
 
 
     def _processSetColorLevels(self, action, dev):
