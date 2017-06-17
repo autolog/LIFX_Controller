@@ -111,7 +111,7 @@ class Plugin(indigo.PluginBase):
 
         self.validatePrefsConfigUi(pluginPrefs)  # Validate the Plugin Config
         
-        self.setDebuggingLevels(pluginPrefs)  # Check monitoring / debug / filered IP address options
+        self.setDebuggingLevels(pluginPrefs)  # Check monitoring / debug / filtered IP address options
 
     def __del__(self):
 
@@ -167,6 +167,7 @@ class Plugin(indigo.PluginBase):
         self.globals['lifxLanClient'] = LifxLAN(None)  # Discover LIFX Devices
         self.globals['lifxDevices'] = self.globals['lifxLanClient'].get_lights()
         for lifxDevice in self.globals['lifxDevices']:
+            # indigo.server.log(u'LIFX DETAIL: %s' % lifxDevice)
             lifxDeviceLabel = str(lifxDevice.get_label()).rstrip()
             lifxDeviceMacAddr = lifxDevice.mac_addr
             lifxDeviceIpAddress = lifxDevice.ip_addr
@@ -566,12 +567,17 @@ class Plugin(indigo.PluginBase):
                     lifxDeviceMacAddr = lifxDevice.mac_addr
                     lifxDeviceIpAddress = lifxDevice.ip_addr
                     if dev.address == lifxDevice.mac_addr:
-                        self.globals['lifx'][dev.id]['lifxLanLightObject'] = Light(lifxDeviceMacAddr, lifxDeviceIpAddress)
+                        if dev.model == 'LIFX Z':
+                            self.globals['lifx'][dev.id]['lifxLanLightObject'] = MultiZoneLight(lifxDeviceMacAddr, lifxDeviceIpAddress)
+                        else:
+                            self.globals['lifx'][dev.id]['lifxLanLightObject'] = Light(lifxDeviceMacAddr, lifxDeviceIpAddress)
 
             self.globals['lifx'][dev.id]['started']                  = False
             self.globals['lifx'][dev.id]['datetimeStarted']          = indigo.server.getTime()
             self.globals['lifx'][dev.id]['initialisedFromlamp']      = False
             self.globals['lifx'][dev.id]['lastResponseToPollCount']  = 0
+
+            self.globals['lifx'][dev.id]['previousLifxComand']       = ''  # Record of last command invoked for LIFX device
 
             if self.globals['lifx'][dev.id]['lifxLanLightObject'] == None:
                 self.globals['lifx'][dev.id]['ipAddress'] = dev.states['ipAddress']  # if LIFX device not found - default to existing value
@@ -692,6 +698,7 @@ class Plugin(indigo.PluginBase):
             self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_LOW, 'GETHOSTFIRMWARE', [dev.id]])
             self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_LOW, 'GETWIFIFIRMWARE', [dev.id]])
             self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_LOW, 'GETWIFIINFO', [dev.id]])
+            self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_LOW, 'GETPORT', [dev.id]])
 
         except StandardError, e:
             exc_type, exc_obj, exc_tb = sys.exc_info()
@@ -1883,30 +1890,41 @@ class Plugin(indigo.PluginBase):
 
         ###### BRIGHTEN BY ######
         elif action.deviceAction ==indigo.kDeviceAction.BrightenBy:
-            newBrightness = dev.brightness + action.actionValue  #  action.actionValue contains brightness increase value (0 - 100)
-            if newBrightness > 100:
-                newBrightness = 100
-            self._processBrightnessSet(action, dev, newBrightness)
-            self.generalLogger.info(u"sent \"%s\" %s to %d" % (dev.name, "brighten", newBrightness))
+            if not dev.onState:
+                self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'IMMEDIATE-ON', [dev.id]])
+
+            if dev.brightness < 100:
+                brightenBy = action.actionValue #  action.actionValue contains brightness increase value
+                newBrightness = dev.brightness + brightenBy
+                if newBrightness > 100:
+                    newBrightness = 100
+                self.generalLogger.info(u"Brightening %s by %s to %s" % (dev.name, brightenBy, newBrightness))
+                self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'BRIGHTEN', [dev.id, newBrightness]])
+                dev.updateStateOnServer("brightnessLevel", newBrightness)
+            else:
+                self.generalLogger.info(u"Ignoring Brighten request for %s as device is at full brightness" % (dev.name))
 
         ###### DIM BY ######
         elif action.deviceAction ==indigo.kDeviceAction.DimBy:
-            newBrightness = dev.brightness - action.actionValue  #  action.actionValue contains brightness decrease value (0 - 100)
-            if newBrightness < 0:
-                newBrightness = 0
-            # if action.actionValue == 1:
-            #     self.generalLogger.info(u"ACTION VALUE for = 1 for %s, newBrightness = %s" % (dev.name, newBrightness))
-            #     self._processBrightnessAlterByOne(action, dev, newBrightness)
-            #     dev.updateStateOnServer("brightnessLevel", newBrightness)
-            # else:
-            self._processBrightnessSet(action, dev, newBrightness)
-            self.generalLogger.info(u"sent \"%s\" %s to %d" % (dev.name, "dim", newBrightness))
+            if dev.onState and dev.brightness > 0: 
+                dimBy = action.actionValue #  action.actionValue contains brightness decrease value
+                newBrightness = dev.brightness - dimBy
+                if newBrightness < 0:
+                    newBrightness = 0
+                    dev.updateStateOnServer("brightnessLevel", newBrightness)
+                    self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'OFF', [dev.id]])
+                    self.generalLogger.info(u"sent \"%s\" %s" % (dev.name, 'dim to off'))
+                else:
+                    self.generalLogger.info(u"Dimming %s by %s to %s" % (dev.name, dimBy, newBrightness))
+                    self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'DIM', [dev.id, newBrightness]])
+                    dev.updateStateOnServer("brightnessLevel", newBrightness)
+            else:
+                    self.generalLogger.info(u"Ignoring Dim request for %s as device is Off" % (dev.name))
 
         ###### SET COLOR LEVELS ######
         elif action.deviceAction ==indigo.kDeviceAction.SetColorLevels:
             self.generalLogger.debug(u"SET COLOR LEVELS = \"%s\" %s" % (dev.name, action))
             self._processSetColorLevels(action, dev)
-
 
     def _processTurnOn(self, pluginAction, dev, actionUi='on'):
         self.methodTracer.threaddebug(u"CLASS: Plugin")
@@ -1941,22 +1959,6 @@ class Plugin(indigo.PluginBase):
             actionUi = "toggle from 'on' to 'off'"
             self._processTurnOff(pluginAction, dev, actionUi)
 
-    def _processBrightnessAlterByOne(self, pluginAction, dev, newBrightness):  # Dev is a LIFX Lamp
-        self.methodTracer.threaddebug(u"CLASS: Plugin")
-
-        duration = self.globals['lifx'][dev.id]['durationDimBrighten']
-        if newBrightness > 0:
-            if newBrightness > dev.brightness:
-                actionUi = 'brighten'
-            else:
-                actionUi = 'dim'  
-            self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'DIM_BRIGHTEN_BY_ONE', [dev.id, newBrightness]])
-            self.generalLogger.info(u"sent \"%s\" %s to %s with duration of %s seconds" % (dev.name, actionUi, newBrightness, duration))
-        else:
-            self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'OFF', [dev.id]])
-            self.generalLogger.info(u"sent \"%s\" %s with duration of %s seconds" % (dev.name, 'dim to off'), duration)
-
-
     def _processBrightnessSet(self, pluginAction, dev, newBrightness):  # Dev is a LIFX Lamp
         self.methodTracer.threaddebug(u"CLASS: Plugin")
 
@@ -1982,7 +1984,15 @@ class Plugin(indigo.PluginBase):
                 
             duration = str(self.globals['lifx'][dev.id]['durationColorWhite'])
 
-            if ('whiteLevel' in action.actionValue) or ('whiteTemperature' in action.actionValue):
+            # Determine Color / White Mode
+            colorMode = False
+
+            # First check if color is being set by the action Set RGBW levels
+            if 'redLevel' in action.actionValue and 'greenLevel' in action.actionValue and 'blueLevel' in action.actionValue:
+                if float(action.actionValue['redLevel']) > 0.0 or float(action.actionValue['greenLevel']) > 0.0 or float(action.actionValue['blueLevel']) > 0.0:
+                    colorMode = True
+
+            if (not colorMode) and (('whiteLevel' in action.actionValue) or ('whiteTemperature' in action.actionValue)):
                 # If either of 'whiteLevel' or 'whiteTemperature' are altered - assume mode is White
 
                 whiteLevel = float(dev.states['whiteLevel'])

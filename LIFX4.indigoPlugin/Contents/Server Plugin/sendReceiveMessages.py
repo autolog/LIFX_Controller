@@ -117,9 +117,10 @@ class ThreadSendReceiveMessages(threading.Thread):
                                     {'key': 'indigoInfraredBrightness', 'value': IndigoInfraredBrightness}]
                                 lifxDev.updateStatesOnServer(keyValueList)
 
+                        self.globals['lifx'][lifxDevId]['previousLifxComand'] = lifxCommand
                         continue
 
-                    if (lifxCommand == 'ON') or (lifxCommand == 'OFF') or (lifxCommand == 'WAVEFORM_OFF'):
+                    if (lifxCommand == 'ON') or (lifxCommand == 'OFF') or (lifxCommand == 'WAVEFORM_OFF') or (lifxCommand == 'IMMEDIATE-ON'):
                         lifxDevId = lifxCommandParameters[0]
 
                         if self.globals['lifx'][lifxDevId]["started"] == True:
@@ -133,6 +134,9 @@ class ThreadSendReceiveMessages(threading.Thread):
 
                             if lifxCommand == 'ON':
                                 duration = float(self.globals['lifx'][lifxDevId]['durationOn'])
+                                power = 65535
+                            elif lifxCommand == 'IMMEDIATE-ON':
+                                duration = 0
                                 power = 65535
                             elif lifxCommand == 'OFF':
                                 duration = float(self.globals['lifx'][lifxDevId]['durationOff'])
@@ -151,6 +155,7 @@ class ThreadSendReceiveMessages(threading.Thread):
                             self.globals['deviceTimers'][lifxDevId]['STATUS'] = threading.Timer(1.0, self.handleTimerRepeatingQueuedStatusCommand, [lifxDev, timerDuration])
                             self.globals['deviceTimers'][lifxDevId]['STATUS'].start()
                         
+                        self.globals['lifx'][lifxDevId]['previousLifxComand'] = lifxCommand
                         continue
 
                     if (lifxCommand == 'INFRARED_ON') or (lifxCommand == 'INFRARED_OFF') or (lifxCommand == 'INFRARED_SET'):
@@ -185,6 +190,7 @@ class ThreadSendReceiveMessages(threading.Thread):
                             self.globals['deviceTimers'][lifxDevId]['STATUS'] = threading.Timer(1.0, self.handleTimerRepeatingQueuedStatusCommand, [lifxDev, 2])
                             self.globals['deviceTimers'][lifxDevId]['STATUS'].start()
                         
+                        self.globals['lifx'][lifxDevId]['previousLifxComand'] = lifxCommand
                         continue
 
                     if lifxCommand == 'DISCOVERY_DELAYED':
@@ -270,7 +276,7 @@ class ThreadSendReceiveMessages(threading.Thread):
 
                         continue
 
-                    if (lifxCommand == 'BRIGHTNESS') or (lifxCommand == 'DIM_BRIGHTEN_BY_ONE'):
+                    if (lifxCommand == 'BRIGHTNESS'):
                         lifxDevId = lifxCommandParameters[0]
 
                         if self.globals['lifx'][lifxDevId]["started"] == True:
@@ -340,6 +346,50 @@ class ThreadSendReceiveMessages(threading.Thread):
 
                                     self.globals['deviceTimers'][lifxDevId]['STATUS'].start()
 
+                        self.globals['lifx'][lifxDevId]['previousLifxComand'] = lifxCommand
+                        continue
+
+
+                    if lifxCommand == 'DIM' or lifxCommand == 'BRIGHTEN':
+                        lifxDevId = lifxCommandParameters[0]
+
+                        if self.globals['lifx'][lifxDevId]["started"] == True:
+                            newBrightness = lifxCommandParameters[1]
+                            newBrightness = int((newBrightness * 65535.0) / 100.0)
+
+                            lifxDev = indigo.devices[lifxDevId]
+
+                            # Clear any outstanding timers
+                            self.clearStatusTimer(lifxDev)
+
+                            hue        = self.globals['lifx'][lifxDevId]['hsbkHue']         # Value between 0 and 65535
+                            saturation = self.globals['lifx'][lifxDevId]['hsbkSaturation']  # Value between 0 and 65535 (e.g. 20% = 13107)
+                            kelvin     = self.globals['lifx'][lifxDevId]['hsbkKelvin']      # Value between 2500 and 9000
+                            powerLevel = self.globals['lifx'][lifxDevId]['powerLevel']      # Value between 0 and 65535 
+
+                            if saturation > 0:  # check if white or colour (colour if saturation > 0)
+                                # colour
+                                if newBrightness > 32768:
+                                    saturation = int(65535 - ((newBrightness - 32768) * 1.98))
+                                    brightness = 65535
+                                else:
+                                    saturation = 65535
+                                    brightness = int(newBrightness * 2.0)
+                            else:
+                                # White
+                                brightness = int(newBrightness)
+
+                            hsbk = [hue, saturation, brightness, kelvin]
+
+                            # self.sendReceiveDebugLogger.debug(u'LIFX COMMAND [BRIGHTNESS]; SET-COLOR for %s: Hue=%s, Saturation=%s, Brightness=%s, Kelvin=%s' % (indigo.devices[lifxDevId].name,  hue, saturation, brightness, kelvin))   
+
+                            try:
+                                self.globals['lifx'][lifxDevId]['lifxLanLightObject'].set_color(hsbk, 0, True)
+                            except IOError, e:
+                                self.communicationLost(lifxDev)
+                                continue
+
+                        self.globals['lifx'][lifxDevId]['previousLifxComand'] = lifxCommand
                         continue
 
 
@@ -398,6 +448,7 @@ class ThreadSendReceiveMessages(threading.Thread):
 
                                 self.globals['deviceTimers'][lifxDevId]['STATUS'].start()
 
+                        self.globals['lifx'][lifxDevId]['previousLifxComand'] = lifxCommand
                         continue
 
 
@@ -455,6 +506,7 @@ class ThreadSendReceiveMessages(threading.Thread):
 
                                 self.globals['deviceTimers'][lifxDevId]['STATUS'].start()
 
+                        self.globals['lifx'][lifxDevId]['previousLifxComand'] = lifxCommand
                         continue
 
 
@@ -527,6 +579,7 @@ class ThreadSendReceiveMessages(threading.Thread):
 
                                 self.globals['deviceTimers'][lifxDevId]['STATUS'].start()
 
+                        self.globals['lifx'][lifxDevId]['previousLifxComand'] = lifxCommand
                         continue
 
 
@@ -599,6 +652,7 @@ class ThreadSendReceiveMessages(threading.Thread):
                                     self.globals['deviceTimers'][lifxDevId]['WAVEFORM_OFF'] = threading.Timer(timerSetFor, self.handleTimerWaveformOffCommand, [lifxDev])
                                     self.globals['deviceTimers'][lifxDevId]['WAVEFORM_OFF'].start()
 
+                        self.globals['lifx'][lifxDevId]['previousLifxComand'] = lifxCommand
                         continue
 
                     if lifxCommand == 'SETLABEL':
@@ -617,6 +671,7 @@ class ThreadSendReceiveMessages(threading.Thread):
                             except IOError, e:
                                 self.communicationLost(lifxDev)
 
+                        self.globals['lifx'][lifxDevId]['previousLifxComand'] = lifxCommand
                         continue
 
 
@@ -669,6 +724,7 @@ class ThreadSendReceiveMessages(threading.Thread):
                                 if propsChanged:
                                     lifxDev.replacePluginPropsOnServer(props)
 
+                        self.globals['lifx'][lifxDevId]['previousLifxComand'] = lifxCommand
                         continue
 
                     if lifxCommand == 'GETHOSTFIRMWARE':
@@ -710,6 +766,49 @@ class ThreadSendReceiveMessages(threading.Thread):
                                 props["version"] = newVersion
                                 lifxDev.replacePluginPropsOnServer(props)
 
+                        self.globals['lifx'][lifxDevId]['previousLifxComand'] = lifxCommand
+                        continue
+
+                    if lifxCommand == 'GETPORT':
+                        lifxDevId = lifxCommandParameters[0]
+                        if self.globals['lifx'][lifxDevId]["started"] == True:
+
+                            self.sendReceiveDebugLogger.debug(u"Processing %s for '%s' " % (lifxCommand, indigo.devices[lifxDevId].name))
+
+                            lifxDev = indigo.devices[lifxDevId]
+
+                            # Clear any outstanding timers
+                            self.clearStatusTimer(lifxDev)
+
+                            try:
+                                port = str(self.globals['lifx'][lifxDevId]['lifxLanLightObject'].get_port())
+                            except IOError, e:
+                                self.communicationLost(lifxDev)
+                                continue
+
+                            self.sendReceiveDebugLogger.info(u"Port for '%s': '%s'" % (indigo.devices[lifxDevId].name, port))
+
+                            # props = lifxDev.pluginProps
+
+                            # if 'version' in props:
+                            #     version = str(props['version']).split('|')
+                            # else:
+                            #     props["version"] = ''
+                            #     version = [wifi_firmware_version]
+
+                            # if len(version) > 0:
+                            #     if wifi_firmware_version == version[0]:  # i.e. Firmware and wifi versions are the same
+                            #         newVersion = wifi_firmware_version
+                            #     else:
+                            #         newVersion = str(version[0]) + '|' + wifi_firmware_version
+                            # else:
+                            #     newVersion = '_|' + wifi_firmware_version
+
+                            # if props["version"] != newVersion:
+                            #     props["version"] = newVersion
+                            #     lifxDev.replacePluginPropsOnServer(props)
+
+                        self.globals['lifx'][lifxDevId]['previousLifxComand'] = lifxCommand
                         continue
 
                     if lifxCommand == 'GETWIFIFIRMWARE':
@@ -751,6 +850,7 @@ class ThreadSendReceiveMessages(threading.Thread):
                                 props["version"] = newVersion
                                 lifxDev.replacePluginPropsOnServer(props)
 
+                        self.globals['lifx'][lifxDevId]['previousLifxComand'] = lifxCommand
                         continue
 
                     if lifxCommand == 'GETWIFIINFO':
@@ -788,6 +888,7 @@ class ThreadSendReceiveMessages(threading.Thread):
                             ]
                             lifxDev.updateStatesOnServer(keyValueList)
 
+                        self.globals['lifx'][lifxDevId]['previousLifxComand'] = lifxCommand
                         continue
 
                     continue
@@ -852,7 +953,7 @@ class ThreadSendReceiveMessages(threading.Thread):
     def clearStatusTimer(self, dev):
         self.methodTracer.threaddebug(u"CLASS: ThreadSendReceiveMessages")
 
-        if 'STATUS' in self.globals['deviceTimers'][dev.id]:
+        if dev.id in self.globals['deviceTimers'] and 'STATUS' in self.globals['deviceTimers'][dev.id]:
             self.globals['deviceTimers'][dev.id]['STATUS'].cancel()
 
     def handleTimerRepeatingQueuedStatusCommand(self, dev, seconds):
