@@ -1,5 +1,25 @@
 # Release Notes
 
+## Version 4.1.0
+
+* **Brighten / Dim Support**
+
+    Now supports Brightening / Dimming using the standard Indigo controls & triggers
+
+* **Set RGMW Levels**
+
+    Processing work-around added to enable Indigo action ‘Set RGBW Levels’ to work.
+    To differentiate between Color and White the plugin does the following: If any of Red, Green or Blue values are greater than zero then the plugin assumes you are setting a Color otherwise it will use the White Level and Temperature values.
+
+* **LifxLan**
+
+    Now uses the latest lifxlan libabry from Meghan Clark - see https://github.com/mclarkk/lifxlan
+    This latest version supports the new firmware recently released by LIFX.
+
+* **Bug Fixes**
+
+    Various
+
 ## Version 4.0.5
 
 * **Bug Fix**
