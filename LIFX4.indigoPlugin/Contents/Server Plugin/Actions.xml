@@ -550,6 +550,21 @@
         </ConfigUI>
     </Action>
 
+<!--     <Action id="brightenByTimer" deviceFilter="self.lifxDevice">
+        <Name>Brighten By Timer</Name>
+        <CallbackMethod>Brighten By Timer</CallbackMethod>
+        <ConfigUI>
+            <Field id="amountToBrightenBy" type="menu" defaultValue="2">
+                <Label>Amount:</Label>
+               <Description>Amount</Description>
+            </Field>
+            <Field id="timerInterval" type="textfield" defaultValue="0.3">
+                <Label>Timer Interval:</Label>
+                <Description>Timer Interval:</Description>
+            </Field>
+        </ConfigUI>
+    </Action>
+ -->
     <Action id="turnOnInfrared" deviceFilter="self.lifxDevice">
         <Name>Turn On Infrared</Name>
         <CallbackMethod>turnOnInfrared</CallbackMethod>

@@ -84,7 +84,7 @@ class ThreadSendReceiveMessages(threading.Thread):
                     if lifxCommand == 'STATUSPOLLING':
                         for lifxDevId in self.globals['lifx']:
                             if self.globals['lifx'][lifxDevId]["started"] == True:
-                                self.sendReceiveDebugLogger.debug(u"Processing %s for %s" % (lifxCommand, indigo.devices[lifxDevId].name))
+                                self.sendReceiveDebugLogger.debug(u"PROCESSING %s FOR %s" % (lifxCommand, indigo.devices[lifxDevId].name))
                                 self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_STATUS_MEDIUM, 'STATUS', [lifxDevId]])
                                 self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_LOW, 'GETWIFIINFO', [lifxDevId]])
                                  
@@ -97,7 +97,7 @@ class ThreadSendReceiveMessages(threading.Thread):
                             lifxDev = indigo.devices[lifxDevId]
 
                             if self.globals['lifx'][lifxDevId]["started"] == True:
-                                self.sendReceiveDebugLogger.debug(u"Processing %s for '%s'" % (lifxCommand, indigo.devices[lifxDevId].name))
+                                self.sendReceiveDebugLogger.debug(u"PROCESSING %s FOR '%s'" % (lifxCommand, indigo.devices[lifxDevId].name))
 
                                 ioStatus, power, hsbk = self.getColor(lifxDev, self.globals['lifx'][lifxDevId]['lifxLanLightObject'])
                                 if ioStatus:
@@ -855,7 +855,7 @@ class ThreadSendReceiveMessages(threading.Thread):
 
                     if lifxCommand == 'GETWIFIINFO':
                         lifxDevId = lifxCommandParameters[0]
-                        if self.globals['lifx'][lifxDevId]["started"] == True:
+                        if self.globals['lifx'][lifxDevId]["started"] == True and indigo.devices[lifxDevId].states['connected']:
 
                             self.sendReceiveDebugLogger.debug(u"Processing %s for '%s' " % (lifxCommand, indigo.devices[lifxDevId].name))
 

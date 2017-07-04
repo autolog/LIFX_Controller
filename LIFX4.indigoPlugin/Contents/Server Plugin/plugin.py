@@ -98,7 +98,7 @@ class Plugin(indigo.PluginBase):
         self.globals['polling']['seconds'] = float(300.0)  # 5 minutes
         self.globals['polling']['forceThreadEnd'] = False
         self.globals['polling']['quiesced'] = False
-        self.globals['polling']['missedLimit'] = int(2)  # i.e. 10 minutes in 'seconds' = 300 (5 mins)
+        self.globals['polling']['missedPollLimit'] = int(2)  # Default to 2 missed polls
         self.globals['polling']['count'] = int(0)
         self.globals['polling']['trigger'] = int(0)
 
