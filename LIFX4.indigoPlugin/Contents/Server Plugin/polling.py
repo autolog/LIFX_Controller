@@ -87,9 +87,11 @@ class ThreadPolling(threading.Thread):
                                 allResponding = False  #  Indicate at least one light "not acknowledging" 
                     if not allResponding:
                         self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_DISCOVERY, 'DISCOVERY', 0])  # Discover devices before polling LIFX devices for status updates
+                        self.pollingLogger.debug(u"QUEUE_PRIORITY_DISCOVERY = DISCOVERY")
 
 
                     self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_POLLING, 'STATUSPOLLING', 0])  # Poll LIFX devices for status updates
+                    self.pollingLogger.debug(u"QUEUE_PRIORITY_POLLING = STATUSPOLLING")
 
             self.pollingLogger.debug(u"Polling thread ending")
 

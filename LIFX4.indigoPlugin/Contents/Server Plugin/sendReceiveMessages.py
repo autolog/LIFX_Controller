@@ -97,17 +97,18 @@ class ThreadSendReceiveMessages(threading.Thread):
                             lifxDev = indigo.devices[lifxDevId]
 
                             if self.globals['lifx'][lifxDevId]["started"] == True:
-                                self.sendReceiveDebugLogger.debug(u"PROCESSING %s FOR '%s'" % (lifxCommand, indigo.devices[lifxDevId].name))
+                                # self.sendReceiveDebugLogger.debug(u"PROCESSING [1] %s FOR '%s'" % (lifxCommand, indigo.devices[lifxDevId].name))
 
                                 ioStatus, power, hsbk = self.getColor(lifxDev, self.globals['lifx'][lifxDevId]['lifxLanLightObject'])
                                 if ioStatus:
                                     self.updateStatusFromMsg(lifxCommand, lifxDevId, power, hsbk)
+                                # self.sendReceiveDebugLogger.debug(u"PROCESSING [2] %s FOR '%s'" % (lifxCommand, indigo.devices[lifxDevId].name))
                             props = lifxDev.pluginProps
                             if ("SupportsInfrared" in props) and props["SupportsInfrared"]:
                                 try:
                                     infraredBrightness = self.globals['lifx'][lifxDevId]['lifxLanLightObject'].get_infrared()
-                                except IOError, e:
-                                    self.sendReceiveDebugLogger.error(u"SupportsInfrared ERROR detected in LIFX Send Receive Message Thread. Line '%s' has error='%s'" % (sys.exc_traceback.tb_lineno, e))   
+                                except:
+                                    self.sendReceiveDebugLogger.error(u"SupportsInfrared ERROR detected in LIFX Send Receive Message Thread. Line '%s' has error='%s'" % (sys.exc_traceback.tb_lineno, sys.exc_info()[0]))     
                                     infraredBrightness = 0
                                     self.communicationLost(lifxDev)
 
@@ -148,7 +149,7 @@ class ThreadSendReceiveMessages(threading.Thread):
                             duration = int(duration * 1000)
                             try:    
                                 self.globals['lifx'][lifxDevId]['lifxLanLightObject'].set_power(power, duration)
-                            except IOError, e:
+                            except:
                                 self.communicationLost(lifxDev)
                                 continue
 
@@ -183,7 +184,7 @@ class ThreadSendReceiveMessages(threading.Thread):
                             try:
                                 self.globals['lifx'][lifxDevId]['lifxLanLightObject'].set_infrared(infraredBrightness)
                                 self.sendReceiveDebugLogger.debug(u"Processing %s for '%s'; Infrared Brightness = %s" % (lifxCommand, indigo.devices[lifxDevId].name, infraredBrightness))
-                            except IOError, e:
+                            except:
                                 self.communicationLost(lifxDev)
                                 continue
 
@@ -315,14 +316,14 @@ class ThreadSendReceiveMessages(threading.Thread):
                                     try:
                                         hsbkWithBrightnessZero = [hue, saturation, 0, kelvin]
                                         self.globals['lifx'][lifxDevId]['lifxLanLightObject'].set_color(hsbkWithBrightnessZero, 0)
-                                    except IOError, e:
+                                    except:
                                         self.communicationLost(lifxDev)
                                         continue
                                     # Need to turn on LIFX device as currently off
                                     power = 65535
                                     try:
                                         self.globals['lifx'][lifxDevId]['lifxLanLightObject'].set_power(power, 0)
-                                    except IOError, e:
+                                    except:
                                         self.communicationLost(lifxDev)
                                         continue
 
@@ -336,7 +337,7 @@ class ThreadSendReceiveMessages(threading.Thread):
 
                                 try:
                                     self.globals['lifx'][lifxDevId]['lifxLanLightObject'].set_color(hsbk, duration)
-                                except IOError, e:
+                                except:
                                     self.communicationLost(lifxDev)
                                     continue
 
@@ -385,7 +386,7 @@ class ThreadSendReceiveMessages(threading.Thread):
 
                             try:
                                 self.globals['lifx'][lifxDevId]['lifxLanLightObject'].set_color(hsbk, 0, True)
-                            except IOError, e:
+                            except:
                                 self.communicationLost(lifxDev)
                                 continue
 
@@ -418,14 +419,14 @@ class ThreadSendReceiveMessages(threading.Thread):
                                     try:
                                         hsbkWithBrightnessZero = [hue, saturation, 0, kelvin]
                                         self.globals['lifx'][lifxDevId]['lifxLanLightObject'].set_color(hsbkWithBrightnessZero, 0)
-                                    except IOError, e:
+                                    except:
                                         self.communicationLost(lifxDev)
                                         continue
                                     # Need to turn on LIFX device as currently off
                                     power = 65535
                                     try:
                                         self.globals['lifx'][lifxDevId]['lifxLanLightObject'].set_power(power, 0)
-                                    except IOError, e:
+                                    except:
                                         self.communicationLost(lifxDev)
                                         continue
                                         
@@ -439,7 +440,7 @@ class ThreadSendReceiveMessages(threading.Thread):
 
                                 try:
                                     self.globals['lifx'][lifxDevId]['lifxLanLightObject'].set_color(hsbk, duration)
-                                except IOError, e:
+                                except:
                                     self.communicationLost(lifxDev)
                                     continue
 
@@ -476,14 +477,14 @@ class ThreadSendReceiveMessages(threading.Thread):
                                     try:
                                         hsbkWithBrightnessZero = [hue, saturation, 0, kelvin]
                                         self.globals['lifx'][lifxDevId]['lifxLanLightObject'].set_color(hsbkWithBrightnessZero, 0)
-                                    except IOError, e:
+                                    except:
                                         self.communicationLost(lifxDev)
                                         continue
                                     # Need to turn on LIFX device as currently off
                                     power = 65535
                                     try:
                                         self.globals['lifx'][lifxDevId]['lifxLanLightObject'].set_power(power, 0)
-                                    except IOError, e:
+                                    except:
                                         self.communicationLost(lifxDev)
                                         continue
 
@@ -497,7 +498,7 @@ class ThreadSendReceiveMessages(threading.Thread):
 
                                 try:
                                     self.globals['lifx'][lifxDevId]['lifxLanLightObject'].set_color(hsbk, duration)
-                                except IOError, e:
+                                except:
                                     self.communicationLost(lifxDev)
                                     continue
 
@@ -556,13 +557,13 @@ class ThreadSendReceiveMessages(threading.Thread):
                                 if power == 0 and turnOnIfOff:
                                     try:
                                         self.globals['lifx'][lifxDevId]['lifxLanLightObject'].set_color(hsbk, 0)
-                                    except IOError, e:
+                                    except:
                                         self.communicationLost(lifxDev)
                                         continue
                                     power = 65535
                                     try:
                                         self.globals['lifx'][lifxDevId]['lifxLanLightObject'].set_power(power, duration)
-                                    except IOError, e:
+                                    except:
                                         self.communicationLost(lifxDev)
                                         continue
                                 else:
@@ -570,7 +571,7 @@ class ThreadSendReceiveMessages(threading.Thread):
                                         duration = 0  # As power is off. might as well do apply command straight away
                                     try:
                                         self.globals['lifx'][lifxDevId]['lifxLanLightObject'].set_color(hsbk, duration)
-                                    except IOError, e:
+                                    except:
                                         self.communicationLost(lifxDev)
                                         continue
 
@@ -611,7 +612,7 @@ class ThreadSendReceiveMessages(threading.Thread):
                                     duration = int(duration * 1000)    
                                     try:
                                         self.globals['lifx'][lifxDevId]['lifxLanLightObject'].set_power(power, duration)
-                                    except IOError, e:
+                                    except:
                                         self.communicationLost(lifxDev)
                                         continue
 
@@ -643,7 +644,7 @@ class ThreadSendReceiveMessages(threading.Thread):
 
                                 try:
                                     self.globals['lifx'][lifxDevId]['lifxLanLightObject'].set_waveform(transient, hsbk, period, cycles, duty_cycle, waveform)
-                                except IOError, e:
+                                except:
                                     self.communicationLost(lifxDev)
                                     continue
 
@@ -668,7 +669,7 @@ class ThreadSendReceiveMessages(threading.Thread):
 
                             try:
                                 self.globals['lifx'][lifxDevId]['lifxLanLightObject'].set_label(lifxDev.name)
-                            except IOError, e:
+                            except:
                                 self.communicationLost(lifxDev)
 
                         self.globals['lifx'][lifxDevId]['previousLifxComand'] = lifxCommand
@@ -688,7 +689,7 @@ class ThreadSendReceiveMessages(threading.Thread):
 
                             try:
                                 product = self.globals['lifx'][lifxDevId]['lifxLanLightObject'].get_product()
-                            except IOError, e:
+                            except:
                                 self.communicationLost(lifxDev)
                                 continue
 
@@ -740,7 +741,7 @@ class ThreadSendReceiveMessages(threading.Thread):
 
                             try:
                                 firmware_version = str(self.globals['lifx'][lifxDevId]['lifxLanLightObject'].get_host_firmware_version())
-                            except IOError, e:
+                            except:
                                 self.communicationLost(lifxDev)
                                 continue
 
@@ -782,7 +783,7 @@ class ThreadSendReceiveMessages(threading.Thread):
 
                             try:
                                 port = str(self.globals['lifx'][lifxDevId]['lifxLanLightObject'].get_port())
-                            except IOError, e:
+                            except:
                                 self.communicationLost(lifxDev)
                                 continue
 
@@ -824,7 +825,7 @@ class ThreadSendReceiveMessages(threading.Thread):
 
                             try:
                                 wifi_firmware_version = str(self.globals['lifx'][lifxDevId]['lifxLanLightObject'].get_wifi_firmware_version())
-                            except IOError, e:
+                            except:
                                 self.communicationLost(lifxDev)
                                 continue
 
@@ -866,7 +867,7 @@ class ThreadSendReceiveMessages(threading.Thread):
 
                             try:
                                 signal, tx, rx = self.globals['lifx'][lifxDevId]['lifxLanLightObject'].get_wifi_info_tuple()
-                            except IOError, e:
+                            except:
                                 self.communicationLost(lifxDev)
                                 continue
 
@@ -1020,19 +1021,39 @@ class ThreadSendReceiveMessages(threading.Thread):
     def communicationLost(self, argLifxDev):
         if argLifxDev.states['connected'] == True:
             argLifxDev.updateStateOnServer(key='connected', value=False)
-            argLifxDev.setErrorStateOnServer(u"no ack")
-            self.sendReceiveMonitorLogger.error(u"Communication lost with \"%s\" - status set to 'No Acknowledgment' (no ack)" % argLifxDev.name)  
+            argLifxDev.setErrorStateOnServer(u"no ACK")
+            self.sendReceiveMonitorLogger.debug(u"Communication lost with \"%s\" - status set to 'No Acknowledgment' (no ack)" % argLifxDev.name)  
 
     def getColor(self, argLifxDev, argLifxLanLightObject):
         try:
+            if argLifxDev.name == 'Study':
+                self.sendReceiveDebugLogger.debug(u"GET_COLOR [1] for \"%s\"" % argLifxDev.name)  
+
             hsbk = argLifxLanLightObject.get_color()
+            if argLifxDev.name == 'Study':
+                self.sendReceiveDebugLogger.debug(u"GET_COLOR [2] for \"%s\"" % argLifxDev.name)  
             power = argLifxLanLightObject.power_level
             status = True
         except IOError, e:
+            self.sendReceiveDebugLogger.debug(u"GET_COLOR [IOERROR ERROR] for \"%s\" = %e" % (argLifxDev.name, e))  
             status = False
             hsbk = (0, 0, 0, 3500)
             power = 0
             self.communicationLost(argLifxDev)
+        except StandardError, e:
+            self.sendReceiveDebugLogger.debug(u"GET_COLOR [STANDARD ERROR] for \"%s\" = %s" % (argLifxDev.name, e)) 
+            status = False
+            hsbk = (0, 0, 0, 3500)
+            power = 0
+            self.communicationLost(argLifxDev)
+
+        except:
+            self.sendReceiveDebugLogger.debug(u"GET_COLOR [TOTAL ERROR] for \"%s\" = %s" % (argLifxDev.name, sys.exc_info()[0]))
+            status = False
+            hsbk = (0, 0, 0, 3500)
+            power = 0
+            self.communicationLost(argLifxDev)
+
         return (status, power, hsbk)
 
     def calculateBrightnesssLevelFromSV(self, argSaturation, argBrightness):

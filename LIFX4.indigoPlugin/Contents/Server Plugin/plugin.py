@@ -541,6 +541,8 @@ class Plugin(indigo.PluginBase):
                 self.generalLogger.error(u"Failed to start LIFX device [%s]: Device type [%s] not known by plugin." % (dev.name, dev.deviceTypeId))
                 return
 
+            dev.setErrorStateOnServer(u"no ack")  # Default to 'no ack' status
+
             dev.stateListOrDisplayStateIdChanged()  # Ensure latest devices.xml is being used
 
             # Cancel any existing timers
@@ -710,8 +712,8 @@ class Plugin(indigo.PluginBase):
 
         self.generalLogger.info(u"Stopping '%s'" % (dev.name))
 
-        dev.setErrorStateOnServer(u"no ack")  # Default to 'no ack' status
-
+        dev.updateStateImageOnServer(indigo.kStateImageSel.SensorOff)  # Default to grey circle indicating 'offline'
+        dev.updateStateOnServer(key='onOffState', value=False, clearErrorState=True)
         self.globals['lifx'][dev.id]["started"] = False
 
         # Cancel any existing timers
