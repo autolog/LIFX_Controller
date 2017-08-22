@@ -20,7 +20,10 @@ class ThreadPolling(threading.Thread):
 
         threading.Thread.__init__(self)
 
-        self.globals, self.pollStop = globalsAndEvent
+        plugin, self.globals, self.pollStop = globalsAndEvent
+
+        global PLUGIN
+        PLUGIN = plugin
 
         self.previousPollingSeconds = self.globals['polling']['seconds']
 
@@ -72,6 +75,7 @@ class ThreadPolling(threading.Thread):
 
                     # Check if LIFX Lamps are responding to polls
                     allResponding = True  # Assume all LIFX devices are responding
+                    numberNoAck = 0
                     for devId in self.globals['lifx']:
                         if ((len(self.globals['debug']['debugFilteredIpAddresses']) == 0) 
                             or ((len(self.globals['debug']['debugFilteredIpAddresses']) > 0) 
@@ -80,12 +84,20 @@ class ThreadPolling(threading.Thread):
                             dev_poll_check = self.globals['lifx'][devId]['lastResponseToPollCount'] + self.globals['polling']['missedPollLimit']
                             self.pollingLogger.debug(u"Dev = '%s', Count = %s, LIFX LastResponse = %s, Missed Limit = %s, Check = %s" % (indigo.devices[devId].name, self.globals['polling']['count'], self.globals['lifx'][devId]['lastResponseToPollCount'], self.globals['polling']['missedPollLimit'], dev_poll_check))
                             dev = indigo.devices[devId]
-                            if (dev_poll_check < self.globals['polling']['count']) or (not self.globals['lifx'][devId]['started']):
+                            if dev.enabled and (dev_poll_check < self.globals['polling']['count']) or (not self.globals['lifx'][devId]['started']):  # 'started' = device online
+                                numberNoAck += 1
                                 self.pollingLogger.debug(u"dev_poll_check < self.globals['polling']['count']")
                                 indigo.devices[devId].setErrorStateOnServer(u"no ack")
                                 dev.updateStateOnServer(key='connected', value='false', clearErrorState=False)
                                 allResponding = False  #  Indicate at least one light "not acknowledging" 
                     if not allResponding:
+                        if self.globals['polling']['maxNoAckLimit'] > 0:
+                            if (self.globals['polling']['count'] > START_UP_REQUIRED_DISCOVERY_COUNT) and (numberNoAck > self.globals['polling']['maxNoAckLimit']):
+                                self.pollingLogger.error(u"Number of 'No Ack's [%i] exceeds the specified limit [%i] after %i polls - Plugin is being reloaded ...." % (numberNoAck, self.globals['polling']['maxNoAckLimit'], self.globals['polling']['count']))
+                                serverPlugin = indigo.server.getPlugin(self.globals['pluginInfo']['pluginId'])
+                                serverPlugin.restart(waitUntilDone=False)
+                                PLUGIN.sleep(60)
+
                         self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_DISCOVERY, 'DISCOVERY', 0])  # Discover devices before polling LIFX devices for status updates
                         self.pollingLogger.debug(u"QUEUE_PRIORITY_DISCOVERY = DISCOVERY")
 

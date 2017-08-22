@@ -22,14 +22,10 @@ import traceback
 from constants import *
 from lifxlan.lifxlan import *
 
+
 class ThreadSendReceiveMessages(threading.Thread):
 
     # This class controls the sending of commands to the lifx lamp and handles their response.
-    # It receives high level commands to send to the lifx-http server from a queue which it waits on
-    #   and queues replies for handling by the runConcurrent thread
-
-    # It contains the logic for correctly formatting the the high level commands to be sent to the LIFX lamps
-    #   into the specific formats required by the lifx lamps.
 
     def __init__(self, globals):
 
@@ -212,7 +208,7 @@ class ThreadSendReceiveMessages(threading.Thread):
 
                             if ((len(self.globals['debug']['debugFilteredIpAddresses']) == 0) 
                                 or ((len(self.globals['debug']['debugFilteredIpAddresses']) > 0) 
-                                    and ('ipAddress' in self.globals['lifx'][lifxDevice.id]) 
+                                    # and ('ipAddress' in self.globals['lifx'][lifxDevice.id]) 
                                     and (lifxDeviceIpAddress in self.globals['debug']['debugFilteredIpAddresses']))):
 
                                 lifxDeviceMatchedtoIndigoDevice = False
@@ -940,8 +936,8 @@ class ThreadSendReceiveMessages(threading.Thread):
                     pass
                 # except StandardError, e:
                 #     self.sendReceiveDebugLogger.error(u"StandardError detected communicating with LIFX lamp. Line '%s' has error='%s'" % (sys.exc_traceback.tb_lineno, e))   
-                except StandardError, e:
-                    self.sendReceiveDebugLogger.error(u"StandardError detected communicating with LIFX lamp:") 
+                except:
+                    self.sendReceiveDebugLogger.error(u"Exception detected communicating with LIFX lamp:") 
                     errorLines = traceback.format_exc().splitlines()
                     for errorLine in errorLines:
                         self.sendReceiveDebugLogger.error(u"%s" % errorLine)   
@@ -1021,17 +1017,12 @@ class ThreadSendReceiveMessages(threading.Thread):
     def communicationLost(self, argLifxDev):
         if argLifxDev.states['connected'] == True:
             argLifxDev.updateStateOnServer(key='connected', value=False)
-            argLifxDev.setErrorStateOnServer(u"no ACK")
+            argLifxDev.setErrorStateOnServer(u"no ack")
             self.sendReceiveMonitorLogger.debug(u"Communication lost with \"%s\" - status set to 'No Acknowledgment' (no ack)" % argLifxDev.name)  
 
     def getColor(self, argLifxDev, argLifxLanLightObject):
         try:
-            if argLifxDev.name == 'Study':
-                self.sendReceiveDebugLogger.debug(u"GET_COLOR [1] for \"%s\"" % argLifxDev.name)  
-
             hsbk = argLifxLanLightObject.get_color()
-            if argLifxDev.name == 'Study':
-                self.sendReceiveDebugLogger.debug(u"GET_COLOR [2] for \"%s\"" % argLifxDev.name)  
             power = argLifxLanLightObject.power_level
             status = True
         except IOError, e:

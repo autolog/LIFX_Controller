@@ -34,6 +34,12 @@
         <Label>Specify maximum number of polls allowed to be missed before a LIFX Lamp will be flagged with a 'no ack'</Label>
     </Field>
 
+    <Field id="maxNoAckLimit" type="textfield" defaultValue="0" enabledBindingId="statusPolling" tooltip="Specify maximum number of 'no ack's allowed before plugin will be reloaded">
+        <Label>Max No Ack limit?:</Label>
+    </Field>
+    <Field id="help-3" type="label" fontColor="darkgray" fontSize="small" alignWithControl="true">
+        <Label>Specify maximum number of 'no ack's allowed before plugin will be reloaded. A value of zero means don't reload plugin regardles of number of 'no ack's</Label>
+    </Field>
     <Field id="separator-2" type="separator"/>  
 
     <Field id="defaultOnDurationLabel" type="label">
@@ -51,12 +57,12 @@
     <Field type="textfield" id="defaultDurationColorWhite" defaultValue="1.0">
         <Label>Color / White Duration:</Label>
     </Field>
-    <Field id="help-3" type="label" fontColor="darkgray" fontSize="small" alignWithControl="true">
+    <Field id="help-4" type="label" fontColor="darkgray" fontSize="small" alignWithControl="true">
         <Label>Specify durations in seconds or part thereof e.g 2.5</Label>
     </Field>
 
     <Field id="separator-3" type="separator"/>  
-    <Field id="help-4" type="label">
+    <Field id="help-5" type="label">
         <Label>Use Update Check to check for a new release of the LIFX plugin on Github. Use plugin menu to update plugin.</Label>
     </Field>
     <Field type="checkbox" id="updateCheck" defaultValue="true" tooltip="Tick to turn on checking for new LIFX plugin version">
@@ -79,7 +85,7 @@
 
     <Field id="separator-5" type="separator" visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true"/> 
 
-    <Field id="help-5" type="label" fontColor="darkgray" fontSize="small" alignWithControl="true" visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true">
+    <Field id="help-6" type="label" fontColor="darkgray" fontSize="small" alignWithControl="true" visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true">
         <Label>Select monitoring / debugging to be performed by ticking required option(s) below and then clicking Save.</Label>
     </Field>
     <Field type="checkbox" id="debugGeneral" defaultValue="false"  visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" tooltip="Enable logging of detailed debugging info." alwaysUseInDialogHeightCalc="true">

@@ -15,6 +15,7 @@ import logging
 import os
 import Queue
 import re
+import sys
 import threading
 from time import localtime, time, sleep, strftime
 
@@ -32,6 +33,12 @@ class Plugin(indigo.PluginBase):
 
         # Initialise dictionary to store plugin Globals
         self.globals = {}
+
+        # Initialise Indigo plugin info
+        self.globals['pluginInfo'] = {}
+        self.globals['pluginInfo']['pluginId'] = pluginId
+        self.globals['pluginInfo']['pluginDisplayName'] = pluginDisplayName
+        self.globals['pluginInfo']['pluginVersion'] = pluginVersion
 
         # Initialise dictionary for debug in plugin Globals
         self.globals['debug'] = {}
@@ -99,6 +106,7 @@ class Plugin(indigo.PluginBase):
         self.globals['polling']['forceThreadEnd'] = False
         self.globals['polling']['quiesced'] = False
         self.globals['polling']['missedPollLimit'] = int(2)  # Default to 2 missed polls
+        self.globals['polling']['maxNoAckLimit'] = int(0)  # Default to zero 'no ack's i.e. effectively don't reloadplugin
         self.globals['polling']['count'] = int(0)
         self.globals['polling']['trigger'] = int(0)
 
@@ -109,9 +117,9 @@ class Plugin(indigo.PluginBase):
         # Initialise dictionary for update checking
         self.globals['update'] = {}
 
-        self.validatePrefsConfigUi(pluginPrefs)  # Validate the Plugin Config
+        # Set Plugin Config Values
+        self.closedPrefsConfigUi(pluginPrefs, False)
         
-        self.setDebuggingLevels(pluginPrefs)  # Check monitoring / debug / filtered IP address options
 
     def __del__(self):
 
@@ -219,15 +227,15 @@ class Plugin(indigo.PluginBase):
 
         if self.globals['polling']['status'] == True and self.globals['polling']['threadActive'] == False:
             self.globals['threads']['polling']['event']  = threading.Event()
-            self.globals['threads']['polling']['thread'] = ThreadPolling([self.globals, self.globals['threads']['polling']['event']])
+            self.globals['threads']['polling']['thread'] = ThreadPolling([self, self.globals, self.globals['threads']['polling']['event']])
             self.globals['threads']['polling']['thread'].start()
 
         self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_LOW, 'DISCOVERY_DELAYED', []])
  
-        self.pluginConfigDefaultDurationDimBrighten = float(self.pluginPrefs.get("defaultDurationDimBrighten", 1.0))
-        self.pluginConfigDefaultDurationOn          = float(self.pluginPrefs.get("defaultDurationOn", 1.0))
-        self.pluginConfigDefaultODurationOff        = float(self.pluginPrefs.get("defaultDurationOff", 1.0))
-        self.pluginConfigDefaultOdurationColorWhite = float(self.pluginPrefs.get("defaultDurationColorWhite ", 1.0))
+        # self.globals['pluginConfigDefault']['durationDimBrighten'] = float(self.pluginPrefs.get("defaultDurationDimBrighten", 1.0))
+        # self.globals['pluginConfigDefault']['durationOn']          = float(self.pluginPrefs.get("defaultDurationOn", 1.0))
+        # self.globals['pluginConfigDefault']['durationOff']        = float(self.pluginPrefs.get("defaultDurationOff", 1.0))
+        # self.globals['pluginConfigDefault']['durationColorWhite'] = float(self.pluginPrefs.get("defaultDurationColorWhite ", 1.0))
 
         self.generalLogger.info(u"Autolog 'LIFX V4 Controller' initialization complete")
         
@@ -245,30 +253,9 @@ class Plugin(indigo.PluginBase):
         self.methodTracer.threaddebug(u"CLASS: Plugin")
 
         try: 
-
-            if "updateCheck" in valuesDict:
-                self.globals['update']['check'] = bool(valuesDict["updateCheck"])
-            else:
-                self.globals['update']['check'] = False
-
-            # No need to validate this as value can only be selected from a pull down list?
-            if "checkFrequency" in valuesDict:
-                self.globals['update']['checkFrequency'] = valuesDict.get("checkFrequency", 'DAILY')
-
-            if "statusPolling" in valuesDict:
-                self.globals['polling']['status'] = bool(valuesDict["statusPolling"])
-            else:
-                self.globals['polling']['status'] = False
-
-            # No need to validate this as value can only be selected from a pull down list?
-            if "pollingSeconds" in valuesDict:
-                self.globals['polling']['seconds'] = float(valuesDict["pollingSeconds"])
-            else:
-                self.globals['polling']['seconds'] = float(300.0)  # Default to 5 minutes
-
             if "missedPollLimit" in valuesDict:
                 try:
-                    self.globals['polling']['missedPollLimit'] = int(valuesDict["missedPollLimit"])
+                    temp = int(valuesDict["missedPollLimit"])
                 except:
                     errorDict = indigo.Dict()
                     errorDict["missedPollLimit"] = "Invalid number for missed polls limit"
@@ -277,61 +264,59 @@ class Plugin(indigo.PluginBase):
             else:
                 self.globals['polling']['missedPollLimit'] = int(360)  # Default to 6 minutes
 
+            if "maxNoAckLimit" in valuesDict:
+                try:
+                    temp = int(valuesDict["maxNoAckLimit"])
+                except:
+                    errorDict = indigo.Dict()
+                    errorDict["maxNoAckLimit"] = "Invalid number for Max No Ack limit"
+                    errorDict["showAlertText"] = "The number of 'No Ack's limit must be specified as an integer e.g 0, 1, 2, 5 etc."
+                    return (False, valuesDict, errorDict)
+
             if "defaultDurationDimBrighten" in valuesDict:
                 try:
-                    self.pluginConfigDefaultDurationDimBrighten = float(valuesDict["defaultDurationDimBrighten"])
+                    temp = float(valuesDict["defaultDurationDimBrighten"])
                 except:
                     errorDict = indigo.Dict()
                     errorDict["defaultDurationDimBrighten"] = "Invalid number for seconds"
                     errorDict["showAlertText"] = "The number of seconds must be specified as an integer or float e.g. 2, 2.0 or 2.5 etc."
                     return (False, valuesDict, errorDict)
-            else:
-                self.pluginConfigDefaultDuration = float(1.0)  # Default to one second  
-
 
             if "defaultDurationDimBrighten" in valuesDict:
                 try:
-                    self.pluginConfigDefaultDurationDimBrighten = float(valuesDict["defaultDurationDimBrighten"])
+                    temp = float(valuesDict["defaultDurationDimBrighten"])
                 except:
                     errorDict = indigo.Dict()
                     errorDict["defaultDurationDimBrighten"] = "Invalid number for seconds"
                     errorDict["showAlertText"] = "The number of seconds must be specified as an integer or float e.g. 2, 2.0 or 2.5 etc."
                     return (False, valuesDict, errorDict)
-            else:
-                self.pluginConfigDefaultDuration = float(1.0)  # Default to one second  
 
             if "defaultDurationOn" in valuesDict:
                 try:
-                    self.pluginConfigDefaultDurationOn = float(valuesDict["defaultDurationOn"])
+                    temp = float(valuesDict["defaultDurationOn"])
                 except:
                     errorDict = indigo.Dict()
                     errorDict["defaultDurationOn"] = "Invalid number for seconds"
                     errorDict["showAlertText"] = "The number of seconds must be specified as an integer or float e.g. 2, 2.0 or 2.5 etc."
                     return (False, valuesDict, errorDict)
-            else:
-                self.pluginConfigDefaultDurationOn = float(1.0)  # Default to one second  
 
             if "defaultDurationOff" in valuesDict:
                 try:
-                    self.pluginConfigDefaultDurationOff = float(valuesDict["defaultDurationOff"])
+                    temp = float(valuesDict["defaultDurationOff"])
                 except:
                     errorDict = indigo.Dict()
                     errorDict["defaultDurationOff"] = "Invalid number for seconds"
                     errorDict["showAlertText"] = "The number of seconds must be specified as an integer or float e.g. 2, 2.0 or 2.5 etc."
                     return (False, valuesDict, errorDict)
-            else:
-                self.pluginConfigDefaultDurationOff = float(1.0)  # Default to one second  
 
             if "defaultDurationColorWhite" in valuesDict:
                 try:
-                    self.pluginConfigDefaultdurationColorWhite = float(valuesDict["defaultDurationColorWhite"])
+                    temp = float(valuesDict["defaultDurationColorWhite"])
                 except:
                     errorDict = indigo.Dict()
                     errorDict["defaultDurationColorWhite"] = "Invalid number for seconds"
                     errorDict["showAlertText"] = "The number of seconds must be specified as an integer or float e.g. 2, 2.0 or 2.5 etc."
                     return (False, valuesDict, errorDict)
-            else:
-                self.pluginConfigDefaultdurationColorWhite = float(1.0)  # Default to one second  
 
             return True
 
@@ -343,72 +328,91 @@ class Plugin(indigo.PluginBase):
     def closedPrefsConfigUi(self, valuesDict, userCancelled):
         self.methodTracer.threaddebug(u"CLASS: Plugin")
 
-        self.generalLogger.debug(u"'closePrefsConfigUi' called with userCancelled = %s" % (str(userCancelled)))  
+        try:
 
-        if userCancelled == True:
-            return
+            self.generalLogger.debug(u"'closePrefsConfigUi' called with userCancelled = %s" % (str(userCancelled)))  
 
-        if self.globals['update']['check']:
-            if self.globals['update']['checkFrequency'] == 'WEEKLY':
-                self.globals['update']['checkTimeIncrement'] = (7 * 24 * 60 * 60)  # In seconds
+            if userCancelled == True:
+                return
+
+            self.globals['update']['check'] = bool(valuesDict.get("updateCheck", False))
+            self.globals['update']['checkFrequency'] = valuesDict.get("checkFrequency", 'DAILY')
+
+            if self.globals['update']['check']:
+                if self.globals['update']['checkFrequency'] == 'WEEKLY':
+                    self.globals['update']['checkTimeIncrement'] = (7 * 24 * 60 * 60)  # In seconds
+                else:
+                    # DAILY 
+                    self.globals['update']['checkTimeIncrement'] = (24 * 60 * 60)  # In seconds
+
+            self.globals['polling']['status']          = bool(valuesDict.get("statusPolling", False))
+            self.globals['polling']['seconds']         = float(valuesDict.get("pollingSeconds", float(300.0)))  # Default to 5 minutes
+            self.globals['polling']['missedPollLimit'] = int(valuesDict.get("missedPollLimit", int(360)))  # Default to 6 minutes
+            self.globals['polling']['maxNoAckLimit']   = int(valuesDict.get("maxNoAckLimit", int(0)))  # Default to Zero (no check)
+
+            self.globals['pluginConfigDefault'] = {}
+            self.globals['pluginConfigDefault']['durationDimBrighten'] = float(valuesDict.get("defaultDurationDimBrighten", float(1.0)))  # Default to one second
+            self.globals['pluginConfigDefault']['durationOn']          = float(self.pluginPrefs.get("defaultDurationOn", 1.0))
+            self.globals['pluginConfigDefault']['durationOff']         = float(self.pluginPrefs.get("defaultDurationOff", 1.0))
+            self.globals['pluginConfigDefault']['durationColorWhite']  = float(self.pluginPrefs.get("defaultDurationColorWhite ", 1.0))
+
+            # Check monitoring / debug / filered IP address options  
+            self.setDebuggingLevels(valuesDict)
+
+            # Following logic checks whether polling is required.
+            # If it isn't required, then it checks if a polling thread exists and if it does it ends it
+            # If it is required, then it checks if a pollling thread exists and 
+            #   if a polling thread doesn't exist it will create one as long as the start logic has completed and created a LIFX Command Queue.
+            #   In the case where a LIFX command queue hasn't been created then it means 'Start' is yet to run and so 
+            #   'Start' will create the polling thread. So this bit of logic is mainly used where polling has been turned off
+            #   after starting and then turned on again
+            # If polling is required and a polling thread exists, then the logic 'sets' an event to cause the polling thread to awaken and
+            #   update the polling interval
+
+            if self.globals['polling']['status'] == False:
+                if self.globals['polling']['threadActive'] == True:
+                    self.globals['polling']['forceThreadEnd'] = True
+                    self.globals['threads']['polling']['event'].set()  # Stop the Polling Thread
+                    self.globals['threads']['polling']['thread'].join(5.0)  # Wait for up t0 5 seconds for it to end
+                    del self.globals['threads']['polling']['thread']  # Delete thread so that it can be recreated if polling is turned on again
             else:
-                # DAILY 
-                self.globals['update']['checkTimeIncrement'] = (24 * 60 * 60)  # In seconds
-
-
-        # Check monitoring / debug / filered IP address options  
-        self.setDebuggingLevels(valuesDict)
-
-        # Following logic checks whether polling is required.
-        # If it isn't required, then it checks if a polling thread exists and if it does it ends it
-        # If it is required, then it checks if a pollling thread exists and 
-        #   if a polling thread doesn't exist it will create one as long as the start logic has completed and created a LIFX Command Queue.
-        #   In the case where a LIFX command queue hasn't been created then it means 'Start' is yet to run and so 
-        #   'Start' will create the polling thread. So this bit of logic is mainly used where polling has been turned off
-        #   after starting and then turned on again
-        # If polling is required and a polling thread exists, then the logic 'sets' an event to cause the polling thread to awaken and
-        #   update the polling interval
-
-        if self.globals['polling']['status'] == False:
-            if self.globals['polling']['threadActive'] == True:
-                self.globals['polling']['forceThreadEnd'] = True
-                self.globals['threads']['polling']['event'].set()  # Stop the Polling Thread
-                self.globals['threads']['polling']['thread'].join(5.0)  # Wait for up t0 5 seconds for it to end
-                del self.globals['threads']['polling']['thread']  # Delete thread so that it can be recreated if polling is turned on again
-        else:
-            if self.globals['polling']['threadActive'] == False:
-                if self.globals['queues']['initialised'] == True:
+                if self.globals['polling']['threadActive'] == False:
+                    if self.globals['queues']['initialised'] == True:
+                        self.globals['polling']['forceThreadEnd'] = False
+                        self.globals['threads']['polling']['event'] = threading.Event()
+                        self.globals['threads']['polling']['thread'] = ThreadPolling([self, self.globals, self.globals['threads']['polling']['event']])
+                        self.globals['threads']['polling']['thread'].start()
+                else:
                     self.globals['polling']['forceThreadEnd'] = False
-                    self.globals['threads']['polling']['event'] = threading.Event()
-                    self.globals['threads']['polling']['thread'] = ThreadPolling([self.globals, self.globals['threads']['polling']['event']])
-                    self.globals['threads']['polling']['thread'].start()
-            else:
-                self.globals['polling']['forceThreadEnd'] = False
-                self.globals['threads']['polling']['event'].set()  # cause the Polling Thread to update immediately with potentially new polling seconds value
+                    self.globals['threads']['polling']['event'].set()  # cause the Polling Thread to update immediately with potentially new polling seconds value
 
+        except StandardError, e:
+            self.generalLogger.error(u"closedPrefsConfigUi error detected. Line '%s' has error='%s'" % (sys.exc_traceback.tb_lineno, e))   
+            return True
 
     def setDebuggingLevels(self, valuesDict):
         self.methodTracer.threaddebug(u"CLASS: Plugin")
 
-        # set filered IP address
+        self.globals['debug']['monitorDebugEnabled'] = bool(valuesDict.get("monitorDebugEnabled", False))
 
-        self.globals['debug']['debugFilteredIpAddressesUI'] = ''
-        if valuesDict.get("debugFilteredIpAddresses", '') != '':
+        self.globals['debug']['debugFilteredIpAddresses'] = []  # Set to LIFX Lamp IP Address(es) to limit processing for debug purposes
+        self.globals['debug']['debugFilteredIpAddressesUI'] = ''  # Set to LIFX Lamp IP Address(es) to limit processing for debug purposes (UI version)
+
+        # set filtered IP address (only if debugging enabled)
+        if self.globals['debug']['monitorDebugEnabled'] and valuesDict.get("debugFilteredIpAddresses", '') != '':
             self.globals['debug']['debugFilteredIpAddresses'] = valuesDict.get("debugFilteredIpAddresses", '').replace(' ', '').split(',')  # Create List of IP Addresses to filter on
 
-        if self.globals['debug']['debugFilteredIpAddresses']:  # Evaluates to True if list contains entries
-            for ipAddress in self.globals['debug']['debugFilteredIpAddresses']:
-                if self.globals['debug']['debugFilteredIpAddressesUI'] == '':
-                    self.globals['debug']['debugFilteredIpAddressesUI'] += ipAddress
-                else:
-                    self.globals['debug']['debugFilteredIpAddressesUI'] += ', ' + ipAddress
-                    
-            if len(self.globals['debug']['debugFilteredIpAddresses']) == 1:    
-                self.generalLogger.warning(u"Filtering on LIFX Device with IP Address: %s" % (self.globals['debug']['debugFilteredIpAddressesUI']))
-            else:  
-                self.generalLogger.warning(u"Filtering on LIFX Devices with IP Addresses: %s" % (self.globals['debug']['debugFilteredIpAddressesUI']))  
-
-        self.globals['debug']['monitorDebugEnabled'] = bool(valuesDict.get("monitorDebugEnabled", False))
+            if self.globals['debug']['debugFilteredIpAddresses']:  # Evaluates to True if list contains entries
+                for ipAddress in self.globals['debug']['debugFilteredIpAddresses']:
+                    if self.globals['debug']['debugFilteredIpAddressesUI'] == '':
+                        self.globals['debug']['debugFilteredIpAddressesUI'] += ipAddress
+                    else:
+                        self.globals['debug']['debugFilteredIpAddressesUI'] += ', ' + ipAddress
+                        
+                if len(self.globals['debug']['debugFilteredIpAddresses']) == 1:    
+                    self.generalLogger.warning(u"Filtering on LIFX Device with IP Address: %s" % (self.globals['debug']['debugFilteredIpAddressesUI']))
+                else:  
+                    self.generalLogger.warning(u"Filtering on LIFX Devices with IP Addresses: %s" % (self.globals['debug']['debugFilteredIpAddressesUI']))  
 
         self.globals['debug']['debugGeneral']       = logging.INFO  # For general debugging of the main thread
         self.globals['debug']['monitorSendReceive'] = logging.INFO  # For logging messages sent & Received to/from LIFX devices
@@ -622,16 +626,16 @@ class Plugin(indigo.PluginBase):
 
             self.globals['lifx'][dev.id]['duration'] = float(1.0)
             if dev.pluginProps.get('overrideDefaultPluginDurations', False):
-                self.globals['lifx'][dev.id]['durationDimBrighten'] = float(dev.pluginProps.get('defaultDurationDimBrighten', self.pluginConfigDefaultDurationDimBrighten))
-                self.globals['lifx'][dev.id]['durationOn']          = float(dev.pluginProps.get('defaultDurationOn', self.pluginConfigDefaultDurationOn))
-                self.globals['lifx'][dev.id]['durationOff']         = float(dev.pluginProps.get('defaultDurationOff', self.pluginConfigDefaultDurationOff))
-                self.globals['lifx'][dev.id]['durationColorWhite']  = float(dev.pluginProps.get('defaultDurationColorWhite', self.pluginConfigDefaultdurationColorWhite))
+                self.globals['lifx'][dev.id]['durationDimBrighten'] = float(dev.pluginProps.get('defaultDurationDimBrighten', self.globals['pluginConfigDefault']['durationDimBrighten']))
+                self.globals['lifx'][dev.id]['durationOn']          = float(dev.pluginProps.get('defaultDurationOn', self.globals['pluginConfigDefault']['durationOn']))
+                self.globals['lifx'][dev.id]['durationOff']         = float(dev.pluginProps.get('defaultDurationOff', self.globals['pluginConfigDefault']['durationOff']))
+                self.globals['lifx'][dev.id]['durationColorWhite']  = float(dev.pluginProps.get('defaultDurationColorWhite', self.globals['pluginConfigDefault']['durationColorWhite']))
 
             else:
-                self.globals['lifx'][dev.id]['durationDimBrighten'] = float(self.pluginConfigDefaultDurationDimBrighten)
-                self.globals['lifx'][dev.id]['durationOn']          = float(self.pluginConfigDefaultDurationOn)
-                self.globals['lifx'][dev.id]['durationOff']         = float(self.pluginConfigDefaultDurationOff)
-                self.globals['lifx'][dev.id]['durationColorWhite']  = float(self.pluginConfigDefaultdurationColorWhite)
+                self.globals['lifx'][dev.id]['durationDimBrighten'] = float(self.globals['pluginConfigDefault']['durationDimBrighten'])
+                self.globals['lifx'][dev.id]['durationOn']          = float(self.globals['pluginConfigDefault']['durationOn'])
+                self.globals['lifx'][dev.id]['durationOff']         = float(self.globals['pluginConfigDefault']['durationOff'])
+                self.globals['lifx'][dev.id]['durationColorWhite']  = float(self.globals['pluginConfigDefault']['durationColorWhite'])
 
             # variables for holding SETLAMP command values
             self.globals['lifx'][dev.id]['lampTarget'] = {}                    # Target states
