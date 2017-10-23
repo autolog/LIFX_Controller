@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# LIFX V4 Controller - Main © Autolog 2016
+# LIFX V5 Controller - Main © Autolog 2016-2017
 #
 
 import colorsys
@@ -10,29 +10,28 @@ try:
     import indigo
 except:
     pass
-import locale
 import logging
-import os
 import Queue
 import re
 import sys
 import threading
-from time import localtime, time, sleep, strftime
+from time import localtime, strftime
 
 from constants import *
 from ghpu import GitHubPluginUpdater
 from lifxlan.lifxlan import *
+from lifxlanHandler import ThreadLifxlanHandler
 from polling import ThreadPolling
-from sendReceiveMessages import ThreadSendReceiveMessages
 
 
+# noinspection PyPep8Naming,PyUnresolvedReferences
 class Plugin(indigo.PluginBase):
 
     def __init__(self, pluginId, pluginDisplayName, pluginVersion, pluginPrefs):
         indigo.PluginBase.__init__(self, pluginId, pluginDisplayName, pluginVersion, pluginPrefs)
 
         # Initialise dictionary to store plugin Globals
-        self.globals = {}
+        self.globals = dict()
 
         # Initialise Indigo plugin info
         self.globals['pluginInfo'] = {}
@@ -42,19 +41,22 @@ class Plugin(indigo.PluginBase):
 
         # Initialise dictionary for debug in plugin Globals
         self.globals['debug'] = {}
-        self.globals['debug']['monitorDebugEnabled']  = False  # if False it indicates no debugging is active else it indicates that at least one type of debug is active
+        self.globals['debug']['monitorDebugEnabled'] = False  # if False it indicates no debugging is active else it indicates that at least one type of debug is active
         self.globals['debug']['debugFilteredIpAddresses'] = []  # Set to LIFX Lamp IP Address(es) to limit processing for debug purposes
         self.globals['debug']['debugFilteredIpAddressesUI'] = ''  # Set to LIFX Lamp IP Address(es) to limit processing for debug purposes (UI version)
-        self.globals['debug']['debugGeneral']         = logging.INFO  # For general debugging of the main thread
-        self.globals['debug']['monitorSendReceive']   = logging.INFO  # For monitoring messages sent to LIFX lamps 
-        self.globals['debug']['debugSendReceiveSend'] = logging.INFO  # For debugging messages sent to LIFX lamps
-        self.globals['debug']['debugMethodTrace']     = logging.INFO  # For displaying method invocations i.e. trace method
-        self.globals['debug']['debugPolling']         = logging.INFO  # For polling debugging
-        self.globals['debug']['previousDebugGeneral']       = logging.INFO  # For general debugging of the main thread
-        self.globals['debug']['previousMonitorSendReceive'] = logging.INFO  # For monitoring messages sent to LIFX lamps 
-        self.globals['debug']['previousDebugSendReceive']   = logging.INFO  # For debugging messages sent to LIFX lamps
-        self.globals['debug']['previousDebugMethodTrace']   = logging.INFO  # For displaying method invocations i.e. trace method
-        self.globals['debug']['previousDebugPolling']       = logging.INFO  # For polling debugging
+        self.globals['debug']['debugGeneral'] = logging.INFO  # For general debugging of the main thread
+
+        self.globals['debug']['monitorLifxlanHandler'] = logging.DEBUG  # For monitoring lifxlan handler
+        self.globals['debug']['debugLifxlanHandler'] = logging.DEBUG  # For debugging  lifxlan handler
+
+        self.globals['debug']['debugMethodTrace'] = logging.INFO  # For displaying method invocations i.e. trace method
+        self.globals['debug']['debugPolling'] = logging.INFO  # For polling debugging
+
+        self.globals['debug']['previousDebugGeneral'] = logging.INFO  # For general debugging of the main thread
+        self.globals['debug']['previousMonitorLifxlanHandler'] = logging.INFO  # For monitoring messages sent to LIFX lamps 
+        self.globals['debug']['previousDebugLifxlanHandler'] = logging.INFO  # For debugging messages sent to LIFX lamps
+        self.globals['debug']['previousDebugMethodTrace'] = logging.INFO  # For displaying method invocations i.e. trace method
+        self.globals['debug']['previousDebugPolling'] = logging.INFO  # For polling debugging
 
         # Setup Logging
         logformat = logging.Formatter('%(asctime)s.%(msecs)03d\t%(levelname)-12s\t%(name)s.%(funcName)-25s %(msg)s', datefmt='%Y-%m-%d %H:%M:%S')
@@ -67,38 +69,34 @@ class Plugin(indigo.PluginBase):
         self.methodTracer.setLevel(self.globals['debug']['debugMethodTrace'])
 
         # Now logging is set-up, output Initialising Message
-        self.generalLogger.info(u"Autolog 'LIFX V4 Controller' initializing . . .")
-
-        # Count of number of discoveries performed
-        self.globals['discoveryCount'] = 0  
+        self.generalLogger.info(u"Autolog 'LIFX V5 Controller' initializing . . .")
 
         # Initialise dictionary to store internal details about LIFX devices
         self.globals['lifx'] = {} 
-
-        self.globals['threads'] = {}
-        self.globals['threads']['sendReceiveMessages'] = {}
-        self.globals['threads']['polling'] = {}
-
-        self.globals['threads']['runConcurrentActive'] = False
 
         # Initialise dictionary to store folder Ids
         self.globals['folders'] = {}
         self.globals['folders']['DevicesId'] = 0  # Id of Devices folder to hold LIFX devices
         self.globals['folders']['VariablesId'] = 0   # Id of Variables folder to hold LIFX preset variables
 
-        # Initialise dictionary to store discovery timer
-        self.globals['discoveryTimer'] = {}
 
         # Initialise dictionary to store per-lamp timers
         self.globals['deviceTimers'] = {}
 
         # Initialise dictionary to store message queues
         self.globals['queues'] = {}
-        self.globals['queues']['messageToSend'] = ''  # Set-up in plugin start (used to process commands, some of which will be sent to the lifx-http server)
-        self.globals['queues']['returnedResponse'] = '' # Set-up in plugin start (a common returned response queue)
-        self.globals['queues']['initialised'] = False
+        self.globals['queues']['lifxlanHandler'] = {}  # There will be one 'messageToSend' queue for each LIFX device - set-up in LIFX device start
+        self.globals['queues']['initialised'] = {} # There will be one 'initialised' flag for each LIFX device - set-up in LIFX device start
 
-        # Initialise dictionary for polling thread
+
+        # Initialise dictionary to store threads
+        self.globals['threads'] = {}
+        self.globals['threads']['polling'] = {}  # There is only one 'polling' thread for all LIFX devices
+        self.globals['threads']['lifxlanHandler'] = {}  # There is only one 'lifxlanHandler' thread for all LIFX devices
+
+        self.globals['threads']['runConcurrentActive'] = False
+
+        # Initialise dictionary for polling (single thread for all LIFX devices)
         self.globals['polling'] = {}
         self.globals['polling']['threadActive'] = False        
         self.globals['polling']['status'] = False
@@ -106,7 +104,7 @@ class Plugin(indigo.PluginBase):
         self.globals['polling']['forceThreadEnd'] = False
         self.globals['polling']['quiesced'] = False
         self.globals['polling']['missedPollLimit'] = int(2)  # Default to 2 missed polls
-        self.globals['polling']['maxNoAckLimit'] = int(0)  # Default to zero 'no ack's i.e. effectively don't reloadplugin
+        self.globals['polling']['maxNoAckLimit'] = int(0)  # Default to zero 'no ack's i.e. effectively don't reload plugin
         self.globals['polling']['count'] = int(0)
         self.globals['polling']['trigger'] = int(0)
 
@@ -119,8 +117,7 @@ class Plugin(indigo.PluginBase):
 
         # Set Plugin Config Values
         self.closedPrefsConfigUi(pluginPrefs, False)
-        
-
+ 
     def __del__(self):
 
         indigo.PluginBase.__del__(self)
@@ -158,95 +155,28 @@ class Plugin(indigo.PluginBase):
 
         indigo.devices.subscribeToChanges()
 
-        # LIFX device initialisation
+        # Create lifxlanHandler process queue
+        self.globals['queues']['lifxlanHandler'] = Queue.PriorityQueue()  # Used to queue lifxlanHandler commands
 
-        for dev in indigo.devices.iter("self"):
-            self.generalLogger.debug(u'LIFX INDIGO DEVICE: %s [%s = %s]' % (dev.name, dev.states['ipAddress'], dev.address))
-            self.globals['lifx'][dev.id] = {}
-            self.globals['lifx'][dev.id]['started']             = False
-            self.globals['lifx'][dev.id]['initialisedFromlamp'] = False
-            self.globals['lifx'][dev.id]['mac_addr']            = dev.address         # eg. 'd0:73:d5:0a:bc:de'
-            self.globals['lifx'][dev.id]['lifxLanLightObject']  = None
-            self.globals['lifx'][dev.id]['lastResponseToPollCount'] = 0 
-            dev.setErrorStateOnServer(u"no ack")  # Default to 'no ack' status
-
-
-        self.generalLogger.info(u"Discovering LIFX devices on network . . .")
-        self.globals['lifxLanClient'] = LifxLAN(None)  # Discover LIFX Devices
-        self.globals['lifxDevices'] = self.globals['lifxLanClient'].get_lights()
-        for lifxDevice in self.globals['lifxDevices']:
-            # indigo.server.log(u'LIFX DETAIL: %s' % lifxDevice)
-            lifxDeviceLabel = str(lifxDevice.get_label()).rstrip()
-            lifxDeviceMacAddr = lifxDevice.mac_addr
-            lifxDeviceIpAddress = lifxDevice.ip_addr
-            lifxDeviceIpPort = lifxDevice.port
-            self.generalLogger.info(u"'%s' discovered at %s [%s] using Port %s" % (lifxDeviceLabel, lifxDeviceIpAddress, lifxDeviceMacAddr, lifxDeviceIpPort))
-
-            lifxDeviceMatchedtoIndigoDevice = False
-            for devId in self.globals['lifx']:
-                if lifxDevice.mac_addr == self.globals['lifx'][devId]['mac_addr']:
-                    lifxDeviceMatchedtoIndigoDevice = True
-                    break
-            if not lifxDeviceMatchedtoIndigoDevice:
-                dev = indigo.device.create(protocol=indigo.kProtocol.Plugin,
-                    address=lifxDeviceMacAddr,
-                    name=lifxDeviceLabel, 
-                    description='LIFX Device', 
-                    pluginId="com.autologplugin.indigoplugin.lifxcontroller",
-                    deviceTypeId="lifxDevice",
-                    props={"onBrightensToLast": True, 
-                           "SupportsColor": True,
-                           "SupportsRGB": True,
-                           "SupportsWhite": True,
-                           "SupportsTwoWhiteLevels": False,
-                           "SupportsWhiteTemperature": True},
-                    folder=self.globals['folders']['DevicesId']) 
-
-                dev.setErrorStateOnServer(u"no ack")  # Default to 'no ack' status
-
-                self.globals['lifx'][dev.id] = {}
-                self.globals['lifx'][dev.id]['started']             = False
-                self.globals['lifx'][dev.id]['initialisedFromlamp'] = False
-                self.globals['lifx'][dev.id]['mac_addr']            = dev.address         # eg. 'd0:73:d5:0a:bc:de'
-                self.globals['lifx'][dev.id]['lifxLanLightObject']  = None
-                self.globals['lifx'][dev.id]['ipAddress']           = lifxDeviceIpAddress
-                devId = dev.id
-
-            self.globals['lifx'][devId]['lifxLanLightObject']  = Light(lifxDeviceMacAddr, lifxDeviceIpAddress)
-            self.globals['lifx'][dev.id]['port']  = lifxDeviceIpPort
-
-        # Create process queues
-        self.globals['queues']['messageToSend'] = Queue.PriorityQueue()  # Used to queue commands to be sent to the a lifx lamp
-        self.globals['queues']['initialised'] = True
-
-        # define and start threads that will send messages to & receive messages from the lifx devices
-        self.globals['threads']['sendReceiveMessages'] = ThreadSendReceiveMessages([self.globals])
-        self.globals['threads']['sendReceiveMessages'].start()
-
-        self.globals['threads']['runConcurrentActive'] = True
+        self.globals['threads']['lifxlanHandler']['event']  = threading.Event()
+        self.globals['threads']['lifxlanHandler']['thread'] = ThreadLifxlanHandler(self.globals, self.globals['threads']['lifxlanHandler']['event'])
+        self.globals['threads']['lifxlanHandler']['thread'].start()
 
         if self.globals['polling']['status'] == True and self.globals['polling']['threadActive'] == False:
             self.globals['threads']['polling']['event']  = threading.Event()
-            self.globals['threads']['polling']['thread'] = ThreadPolling([self, self.globals, self.globals['threads']['polling']['event']])
+            self.globals['threads']['polling']['thread'] = ThreadPolling(self.globals, self.globals['threads']['polling']['event'])
             self.globals['threads']['polling']['thread'].start()
 
-        self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_LOW, 'DISCOVERY_DELAYED', []])
- 
-        # self.globals['pluginConfigDefault']['durationDimBrighten'] = float(self.pluginPrefs.get("defaultDurationDimBrighten", 1.0))
-        # self.globals['pluginConfigDefault']['durationOn']          = float(self.pluginPrefs.get("defaultDurationOn", 1.0))
-        # self.globals['pluginConfigDefault']['durationOff']        = float(self.pluginPrefs.get("defaultDurationOff", 1.0))
-        # self.globals['pluginConfigDefault']['durationColorWhite'] = float(self.pluginPrefs.get("defaultDurationColorWhite ", 1.0))
-
-        self.generalLogger.info(u"Autolog 'LIFX V4 Controller' initialization complete")
+        self.generalLogger.info(u"Autolog 'LIFX V5 Controller' initialization complete")
         
     def shutdown(self):
         self.methodTracer.threaddebug(u"CLASS: Plugin")
 
-        if self.globals['polling']['threadActive'] == True:
+        if self.globals['polling']['threadActive']:
             self.globals['polling']['forceThreadEnd'] = True
             self.globals['threads']['polling']['event'].set()  # Stop the Polling Thread
 
-        self.generalLogger.info(u"Autolog 'LIFX V4 Controller' Plugin shutdown complete")
+        self.generalLogger.info(u"Autolog 'LIFX V5 Controller' Plugin shutdown complete")
 
 
     def validatePrefsConfigUi(self, valuesDict):
@@ -332,7 +262,7 @@ class Plugin(indigo.PluginBase):
 
             self.generalLogger.debug(u"'closePrefsConfigUi' called with userCancelled = %s" % (str(userCancelled)))  
 
-            if userCancelled == True:
+            if userCancelled:
                 return
 
             self.globals['update']['check'] = bool(valuesDict.get("updateCheck", False))
@@ -360,6 +290,7 @@ class Plugin(indigo.PluginBase):
             self.setDebuggingLevels(valuesDict)
 
             # Following logic checks whether polling is required.
+            #
             # If it isn't required, then it checks if a polling thread exists and if it does it ends it
             # If it is required, then it checks if a pollling thread exists and 
             #   if a polling thread doesn't exist it will create one as long as the start logic has completed and created a LIFX Command Queue.
@@ -369,18 +300,18 @@ class Plugin(indigo.PluginBase):
             # If polling is required and a polling thread exists, then the logic 'sets' an event to cause the polling thread to awaken and
             #   update the polling interval
 
-            if self.globals['polling']['status'] == False:
-                if self.globals['polling']['threadActive'] == True:
+            if not self.globals['polling']['status']:
+                if self.globals['polling']['threadActive']:
                     self.globals['polling']['forceThreadEnd'] = True
                     self.globals['threads']['polling']['event'].set()  # Stop the Polling Thread
                     self.globals['threads']['polling']['thread'].join(5.0)  # Wait for up t0 5 seconds for it to end
                     del self.globals['threads']['polling']['thread']  # Delete thread so that it can be recreated if polling is turned on again
             else:
-                if self.globals['polling']['threadActive'] == False:
-                    if self.globals['queues']['initialised'] == True:
+                if not self.globals['polling']['threadActive']:
+                    if self.globals['queues']['initialised']:
                         self.globals['polling']['forceThreadEnd'] = False
                         self.globals['threads']['polling']['event'] = threading.Event()
-                        self.globals['threads']['polling']['thread'] = ThreadPolling([self, self.globals, self.globals['threads']['polling']['event']])
+                        self.globals['threads']['polling']['thread'] = ThreadPolling(self.globals, self.globals['threads']['polling']['event'])
                         self.globals['threads']['polling']['thread'].start()
                 else:
                     self.globals['polling']['forceThreadEnd'] = False
@@ -414,38 +345,38 @@ class Plugin(indigo.PluginBase):
                 else:  
                     self.generalLogger.warning(u"Filtering on LIFX Devices with IP Addresses: %s" % (self.globals['debug']['debugFilteredIpAddressesUI']))  
 
-        self.globals['debug']['debugGeneral']       = logging.INFO  # For general debugging of the main thread
-        self.globals['debug']['monitorSendReceive'] = logging.INFO  # For logging messages sent & Received to/from LIFX devices
-        self.globals['debug']['debugSendReceive']   = logging.INFO  # For debugging messages sent & Received to/from LIFX devices
-        self.globals['debug']['debugMethodTrace']   = logging.INFO  # For displaying method invocations i.e. trace method
-        self.globals['debug']['debugPolling']       = logging.INFO  # For polling debugging
+        self.globals['debug']['debugGeneral'] = logging.INFO  # For general debugging of the main thread
+        self.globals['debug']['monitorLifxlanHandler'] = logging.INFO  # For logging messages 
+        self.globals['debug']['debugLifxlanHandler'] = logging.INFO  # For debugging messages
+        self.globals['debug']['debugMethodTrace'] = logging.INFO  # For displaying method invocations i.e. trace method
+        self.globals['debug']['debugPolling'] = logging.INFO  # For polling debugging
 
-        if self.globals['debug']['monitorDebugEnabled'] == False:
+        if not self.globals['debug']['monitorDebugEnabled']:
             self.plugin_file_handler.setLevel(logging.INFO)
         else:
             self.plugin_file_handler.setLevel(logging.THREADDEBUG)
 
-        debugGeneral           = bool(valuesDict.get("debugGeneral", False))
-        monitorSendReceive     = bool(valuesDict.get("monitorSendReceive", False))
-        debugSendReceive       = bool(valuesDict.get("debugSendReceive", False))
-        debugMethodTrace       = bool(valuesDict.get("debugMethodTrace", False))
-        debugPolling           = bool(valuesDict.get("debugPolling", False))
+        debugGeneral = bool(valuesDict.get("debugGeneral", False))
+        monitorLifxlanHandler = bool(valuesDict.get("monitorLifxlanHandler", False))
+        debugLifxlanHandler = bool(valuesDict.get("debugLifxlanHandler", False))
+        debugMethodTrace = bool(valuesDict.get("debugMethodTrace", False))
+        debugPolling = bool(valuesDict.get("debugPolling", False))
 
         if debugGeneral:
             self.globals['debug']['debugGeneral'] = logging.DEBUG  # For general debugging of the main thread
             self.generalLogger.setLevel(self.globals['debug']['debugGeneral'])
-        if monitorSendReceive:
-            self.globals['debug']['monitorSendReceive'] = logging.DEBUG  # For logging messages sent to LIFX lamps 
-        if debugSendReceive:
-            self.globals['debug']['debugSendReceive'] = logging.DEBUG  # For debugging messages sent to LIFX lamps
+        if monitorLifxlanHandler:
+            self.globals['debug']['monitorLifxlanHandler'] = logging.DEBUG  # For logging messages sent to LIFX lamps 
+        if debugLifxlanHandler:
+            self.globals['debug']['debugLifxlanHandler'] = logging.DEBUG  # For debugging messages sent to LIFX lamps
         if debugMethodTrace:
             self.globals['debug']['debugMethodTrace'] = logging.THREADDEBUG  # For displaying method invocations i.e. trace method
         if debugPolling:
             self.globals['debug']['debugPolling'] = logging.DEBUG  # For polling debugging
 
-        self.globals['debug']['monitoringActive'] = monitorSendReceive
+        self.globals['debug']['monitoringActive'] = monitorLifxlanHandler
 
-        self.globals['debug']['debugActive'] = debugGeneral or debugSendReceive or debugMethodTrace or debugPolling
+        self.globals['debug']['debugActive'] = debugGeneral or debugLifxlanHandler or debugMethodTrace or debugPolling
 
         if not self.globals['debug']['monitorDebugEnabled'] or (not self.globals['debug']['monitoringActive'] and not self.globals['debug']['debugActive']):
             self.generalLogger.info(u"No monitoring or debugging requested")
@@ -454,8 +385,8 @@ class Plugin(indigo.PluginBase):
                 self.generalLogger.info(u"No monitoring requested")
             else:
                 monitorTypes = []
-                if monitorSendReceive:
-                    monitorTypes.append('Send & Receive')
+                if monitorLifxlanHandler:
+                    monitorTypes.append('Lifxlan Handler')
                 message = self.listActive(monitorTypes)   
                 self.generalLogger.warning(u"Monitoring enabled for LIFX: %s" % (message))  
 
@@ -465,8 +396,8 @@ class Plugin(indigo.PluginBase):
                 debugTypes = []
                 if debugGeneral:
                     debugTypes.append('General')
-                if debugSendReceive:
-                    debugTypes.append('Send & Receive')
+                if debugLifxlanHandler:
+                    debugTypes.append('Lifxlan Handler')
                 if debugMethodTrace:
                     debugTypes.append('Method Trace')
                 if debugPolling:
@@ -499,39 +430,35 @@ class Plugin(indigo.PluginBase):
                         if not 'checkTimeIncrement' in self.globals['update']:
                             self.globals['update']['checkTimeIncrement'] = (24 * 60 * 60)  # One Day In seconds
                         self.globals['update']['nextCheckTime'] = time() + self.globals['update']['checkTimeIncrement']
-                        self.generalLogger.info(u"Autolog 'LIFX V4 Controller' checking for Plugin update")
+                        self.generalLogger.info(u"Autolog 'LIFX V5 Controller' checking for Plugin update")
                         self.globals['update']['updater'].checkForUpdate()
 
                         nextCheckTime = strftime('%A, %Y-%b-%d at %H:%M', localtime(self.globals['update']['nextCheckTime']))
-                        self.generalLogger.info(u"Autolog 'LIFX V4 Controller' next update check scheduled for: %s" % nextCheckTime)
+                        self.generalLogger.info(u"Autolog 'LIFX V5 Controller' next update check scheduled for: %s" % nextCheckTime)
                 self.sleep(60) # in seconds
 
         except self.StopThread:
-            self.generalLogger.info(u"Autolog 'LIFX V4 Controller' Plugin shutdown requested")
+            self.generalLogger.info(u"Autolog 'LIFX V5 Controller' Plugin shutdown requested")
 
             self.generalLogger.debug(u"runConcurrentThread being ended . . .") 
 
-            if 'sendReceiveMessages' in self.globals['threads']:
-                self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_STOP_THREAD, 'STOPTHREAD', []])
+            if 'lifxlanHandler' in self.globals['threads']:
+                self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_STOP_THREAD, 'STOPTHREAD', None, None])
 
             # Cancel any existing timers
             for lifxDevId in self.globals['deviceTimers']:
                 for timer in self.globals['deviceTimers'][lifxDevId]:
                     self.globals['deviceTimers'][lifxDevId][timer].cancel()
 
-            if 'DISCOVERY' in self.globals['discoveryTimer']:
-                self.globals['discoveryTimer']['DISCOVERY'].cancel()
-
-            if self.globals['polling']['threadActive'] == True:
+            if self.globals['polling']['threadActive']:
                 self.globals['polling']['forceThreadEnd'] = True
                 self.globals['threads']['polling']['event'].set()  # Stop the Polling Thread
                 self.globals['threads']['polling']['thread'].join(7.0)  # wait for thread to end
                 self.generalLogger.debug(u"Polling thread now stopped")
 
-            if 'sendReceiveMessages' in self.globals['threads']:
-                self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_STOP_THREAD, 'STOPTHREAD', []])
-                self.globals['threads']['sendReceiveMessages'].join(7.0)  # wait for thread to end
-                self.generalLogger.debug(u"SendReceive thread now stopped")
+            if 'lifxlanHandler' in self.globals['threads']:
+                self.globals['threads']['lifxlanHandler']['thread'].join(7.0)  # wait for thread to end
+                self.generalLogger.debug(u"LifxlanHandler thread now stopped")
 
         self.generalLogger.debug(u". . . runConcurrentThread now ended")   
 
@@ -542,10 +469,19 @@ class Plugin(indigo.PluginBase):
             self.generalLogger.info(u"Starting  '%s' . . . " % (dev.name))
 
             if dev.deviceTypeId != "lifxDevice":
-                self.generalLogger.error(u"Failed to start LIFX device [%s]: Device type [%s] not known by plugin." % (dev.name, dev.deviceTypeId))
+                self.generalLogger.error(u"Failed to start device [%s]: Device type [%s] not known by plugin." % (dev.name, dev.deviceTypeId))
                 return
 
-            dev.setErrorStateOnServer(u"no ack")  # Default to 'no ack' status
+            tempPropsCopy = dev.pluginProps
+            tempPropsCopy['WhiteTemperatureMin'] = 2500
+            tempPropsCopy['WhiteTemperatureMax'] = 9000
+            dev.replacePluginPropsOnServer(tempPropsCopy)
+
+            # dev.setErrorStateOnServer(u"starting")  # Default to 'starting' status
+            dev.updateStateImageOnServer(indigo.kStateImageSel.TimerOn)
+            dev.updateStateOnServer(key='onOffState', value=False)
+            dev.updateStateOnServer(key='brightnessLevel', value=0, uiValue='starting ...')
+            # Set Timer and starting
 
             dev.stateListOrDisplayStateIdChanged()  # Ensure latest devices.xml is being used
 
@@ -560,37 +496,29 @@ class Plugin(indigo.PluginBase):
             # Initialise internal to plugin lifx lamp states to default values
 
 
-            if (len(self.globals['debug']['debugFilteredIpAddresses']) > 0) and (dev.states['ipAddress'] not in self.globals['debug']['debugFilteredIpAddresses']):
-                self.generalLogger.info(u"Start NOT completed for  '%s' - IP Address has been filtered out" % (dev.name))
-                return
-
             if dev.id not in self.globals['lifx']:
                 self.globals['lifx'][dev.id] = {}
-                self.globals['lifx'][dev.id]['mac_addr']            = dev.address         # eg. 'd0:73:d5:0a:bc:de'
-                self.globals['lifx'][dev.id]['lifxLanLightObject']  = None
+                self.globals['lifx'][dev.id]['connected'] = False
+                self.globals['lifx'][dev.id]['mac_addr'] = dev.address  # eg. 'd0:73:d5:0a:bc:de'
+                self.globals['lifx'][dev.id]['ipAddress'] = dev.states['ipAddress']
+                self.globals['lifx'][dev.id]['port'] = dev.states['port']
+                self.globals['lifx'][dev.id]['lifxlanDeviceIndex'] = None  # Once LIFX device has been discovered this will contain a mapping value
+                self.globals['lifx'][dev.id]['ignoreNoAck'] = bool(dev.pluginProps.get('ignoreNoAck', False))
+                self.globals['lifx'][dev.id]['noAckState'] = False
+                
+            if (len(self.globals['debug']['debugFilteredIpAddresses']) > 0) and (dev.states['ipAddress'] not in self.globals['debug']['debugFilteredIpAddresses']):
+                dev.setErrorStateOnServer(u"filtered")  # Set to 'filtered' status
+                self.generalLogger.info(u"LIFX Device '%s' not in filter list. As requested, LIFX Device not started" % (dev.name))
+                self.globals['lifx'][dev.id]['filteredOut'] = True  # Set to True if filtered out and to be treated as disabled
+                return
+            else:
+                self.globals['lifx'][dev.id]['filteredOut'] = False  # Set to False as not filtered out
 
-                for lifxDevice in self.globals['lifxDevices']:
-                    lifxDeviceMacAddr = lifxDevice.mac_addr
-                    lifxDeviceIpAddress = lifxDevice.ip_addr
-                    if dev.address == lifxDevice.mac_addr:
-                        if dev.model == 'LIFX Z':
-                            self.globals['lifx'][dev.id]['lifxLanLightObject'] = MultiZoneLight(lifxDeviceMacAddr, lifxDeviceIpAddress)
-                        else:
-                            self.globals['lifx'][dev.id]['lifxLanLightObject'] = Light(lifxDeviceMacAddr, lifxDeviceIpAddress)
-
-            self.globals['lifx'][dev.id]['started']                  = False
-            self.globals['lifx'][dev.id]['datetimeStarted']          = indigo.server.getTime()
-            self.globals['lifx'][dev.id]['initialisedFromlamp']      = False
             self.globals['lifx'][dev.id]['lastResponseToPollCount']  = 0
-
+            self.globals['lifx'][dev.id]['currentLifxComand'] = ''  # Record of current command invoked for LIFX device (just before Queue Get)
             self.globals['lifx'][dev.id]['previousLifxComand']       = ''  # Record of last command invoked for LIFX device
 
-            if self.globals['lifx'][dev.id]['lifxLanLightObject'] == None:
-                self.globals['lifx'][dev.id]['ipAddress'] = dev.states['ipAddress']  # if LIFX device not found - default to existing value
-                self.globals['lifx'][dev.id]['port'] = dev.states['port']                
-            else:
-                self.globals['lifx'][dev.id]['ipAddress']            = self.globals['lifx'][dev.id]['lifxLanLightObject'].ip_addr  # e.g. 192.168.1.nnn
-                self.globals['lifx'][dev.id]['port']                 = self.globals['lifx'][dev.id]['lifxLanLightObject'].port  # e.g. 56700
+            self.globals['lifx'][dev.id]['datetimeStarted']          = indigo.server.getTime()
 
             self.globals['lifx'][dev.id]['onState']                  = False      # True or False
             self.globals['lifx'][dev.id]['onOffState']               = 'off'      # 'on' or 'off'
@@ -681,6 +609,7 @@ class Plugin(indigo.PluginBase):
                 {'key': 'durationOn', 'value': self.globals['lifx'][dev.id]['durationOn']},
                 {'key': 'durationOff', 'value': self.globals['lifx'][dev.id]['durationOff']},
                 {'key': 'durationColorWhite', 'value': self.globals['lifx'][dev.id]['durationColorWhite']},
+                {'key': 'noAckState', 'value': self.globals['lifx'][dev.id]['noAckState']},
                 {'key': 'connected', 'value': False}]
 
             props = dev.pluginProps
@@ -689,23 +618,10 @@ class Plugin(indigo.PluginBase):
                 keyValueList.append({'key': 'greenLevel', 'value': self.globals['lifx'][dev.id]['indigoGreen']})
                 keyValueList.append({'key': 'blueLevel', 'value': self.globals['lifx'][dev.id]['indigoBlue']})
 
-            dev.updateStatesOnServer(keyValueList)
+            dev.updateStatesOnServer(keyValueList, clearErrorState=False)
 
-            if self.globals['lifx'][dev.id]['lifxLanLightObject'] == None:
-                self.generalLogger.info(u". . . Unable to connect to '%s' as no corresponding LIFX device discovered on the network." % (dev.name))
-                indigo.devices[dev.id].setErrorStateOnServer(u"no ack")
-            else:                
-                dev.updateStateImageOnServer(indigo.kStateImageSel.TimerOn)
-                self.globals['lifx'][dev.id]["started"] = True
-                self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_STATUS_MEDIUM, 'STATUS', [dev.id]])
-                self.generalLogger.info(u". . . Started '%s' " % (dev.name))
-
-            self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_LOW, 'GETVERSION', [dev.id]])
-            self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_LOW, 'GETHOSTFIRMWARE', [dev.id]])
-            self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_LOW, 'GETWIFIFIRMWARE', [dev.id]])
-            self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_LOW, 'GETWIFIINFO', [dev.id]])
-            self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_LOW, 'GETPORT', [dev.id]])
-
+            self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_STATUS_MEDIUM, 'STATUS', dev.id, None])
+            # self.generalLogger.info(u". . . Started '%s' " % (dev.name))
         except StandardError, e:
             exc_type, exc_obj, exc_tb = sys.exc_info()
             self.generalLogger.error(u"deviceStartComm: StandardError detected for '%s' at line '%s' = %s" % (dev.name, exc_tb.tb_lineno,  e))   
@@ -718,7 +634,8 @@ class Plugin(indigo.PluginBase):
 
         dev.updateStateImageOnServer(indigo.kStateImageSel.SensorOff)  # Default to grey circle indicating 'offline'
         dev.updateStateOnServer(key='onOffState', value=False, clearErrorState=True)
-        self.globals['lifx'][dev.id]["started"] = False
+        dev.updateStateOnServer(key='brightnessLevel', value=0, uiValue=u'not enabled', clearErrorState=True)
+        self.globals['lifx'][dev.id]["connected"] = False
 
         # Cancel any existing timers
         if dev.id in self.globals['deviceTimers']:
@@ -730,17 +647,38 @@ class Plugin(indigo.PluginBase):
         if origDev.deviceTypeId == 'lifxDevice' and newDev.deviceTypeId == 'lifxDevice':
             #  self.methodTracer.threaddebug(u"CLASS: Plugin")  # Disabled as too many log messages!  
             if origDev.name != newDev.name: 
-                if bool(newDev.pluginProps.get('setLifxLabelFromIndigoDeviceName', False)) == True:  # Only change LIFX Lamp label if option set
+                if bool(newDev.pluginProps.get('setLifxLabelFromIndigoDeviceName', False)):  # Only change LIFX Lamp label if option set
                     self.generalLogger.info(u"Changing LIFX Lamp label from '%s' to '%s'" % (origDev.name, newDev.name))
-                    self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'SETLABEL', [newDev.id]])
+                    self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'SETLABEL', newDev.id, None])
         indigo.PluginBase.deviceUpdated(self, origDev, newDev)
 
         return  
+
+    ################################################################################
+    # This is the method that's called to build the member device list.
+    # Note: valuesDict is read-only so any changes you make to it will be discarded.
+    ################################################################################
+    def lifxDevicesList(self, filter, valuesDict, typeId, ahbDevId):
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+
+        self.generalLogger.debug(u"lifxDevicesList called with filter: %s  typeId: %s  Hue Hub: %s" % (filter, typeId, str(ahbDevId)))
+
+        deviceList = list()
+        for dev in indigo.devices:
+            if dev.deviceTypeId == LIFX_DEVICE_TYPEID:
+                deviceList.append((dev.id, dev.name))
+        if len(deviceList)  == 0:
+            deviceList = list((0,'NO LIFX DEVICES DETECTED'))
+        return deviceList
+
 
     def validateDeviceConfigUi(self, valuesDict, typeId, devId):
         self.methodTracer.threaddebug(u"CLASS: Plugin")
 
         self.currentTime = indigo.server.getTime()
+
+        if "ignoreNoAck" in valuesDict and devId in self.globals['lifx']:
+            self.globals['lifx'][devId]['ignoreNoAck'] = bool(valuesDict.get("ignoreNoAck", False))
 
         if "overrideDefaultPluginDurations" in valuesDict and valuesDict["overrideDefaultPluginDurations"] == True:
 
@@ -911,7 +849,7 @@ class Plugin(indigo.PluginBase):
             self.generalLogger.debug(u"validateActionConfigUi [UNKNOWN]: typeId=[%s], actionId=[%s]" % (typeId, actionId))
             return (True, valuesDict)
 
-        if validateResult[0] == True:
+        if validateResult[0]:
             return (True, validateResult[1])
         else:
             return (False, validateResult[1], validateResult[2])
@@ -1227,7 +1165,6 @@ class Plugin(indigo.PluginBase):
                 valuesDict["lifxKelvinStatic"] = str(kelvinDescription)
                 valuesDict["kelvinLifxColorpicker"] = kelvinRgb
                 return valuesDict
-
 
         else:
             valuesDict["lifxHue"]        = "n/a"
@@ -1733,7 +1670,7 @@ class Plugin(indigo.PluginBase):
 
         valuesDict = self.validation[1]  # valuesDict
 
-        if self.validation[0] == True:
+        if self.validation[0]:
             preset = self.buildPresetVariable(valuesDict)  # Build Preset Variable
             if len(preset) > 0:
                 try:
@@ -1767,7 +1704,7 @@ class Plugin(indigo.PluginBase):
 
         valuesDict = self.validation[1]  # valuesDict
 
-        if self.validation[0] == True:
+        if self.validation[0]:
             preset = self.buildPresetVariable(valuesDict)  # Build Preset Variable
             if len(preset) > 0:
                 try:
@@ -1867,13 +1804,13 @@ class Plugin(indigo.PluginBase):
     def _processStatus(self, pluginAction, dev):
         self.methodTracer.threaddebug(u"CLASS: Plugin")
 
-        self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_STATUS_MEDIUM, 'STATUS', [dev.id]])
+        self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_STATUS_MEDIUM, 'STATUS', dev.id, None])
         self.generalLogger.info(u"sent \"%s\" %s" % (dev.name, "status request"))
 
 
     def actionControlDevice(self, action, dev):
         self.methodTracer.threaddebug(u"CLASS: Plugin")
-        if dev.states['connected'] == False or self.globals['lifx'][dev.id]['started'] == False:
+        if dev.states['connected'] == False or self.globals['lifx'][dev.id]['connected'] == False:
             self.generalLogger.info(u"Unable to process  \"%s\" for \"%s\" as device not connected" % (action.deviceAction, dev.name))
             return
 
@@ -1897,7 +1834,7 @@ class Plugin(indigo.PluginBase):
         ###### BRIGHTEN BY ######
         elif action.deviceAction ==indigo.kDeviceAction.BrightenBy:
             if not dev.onState:
-                self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'IMMEDIATE-ON', [dev.id]])
+                self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'IMMEDIATE-ON', dev.id, None])
 
             if dev.brightness < 100:
                 brightenBy = action.actionValue #  action.actionValue contains brightness increase value
@@ -1905,7 +1842,7 @@ class Plugin(indigo.PluginBase):
                 if newBrightness > 100:
                     newBrightness = 100
                 self.generalLogger.info(u"Brightening %s by %s to %s" % (dev.name, brightenBy, newBrightness))
-                self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'BRIGHTEN', [dev.id, newBrightness]])
+                self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'BRIGHTEN', dev.id, [newBrightness]])
                 dev.updateStateOnServer("brightnessLevel", newBrightness)
             else:
                 self.generalLogger.info(u"Ignoring Brighten request for %s as device is at full brightness" % (dev.name))
@@ -1918,11 +1855,11 @@ class Plugin(indigo.PluginBase):
                 if newBrightness < 0:
                     newBrightness = 0
                     dev.updateStateOnServer("brightnessLevel", newBrightness)
-                    self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'OFF', [dev.id]])
+                    self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'OFF', dev.id, None])
                     self.generalLogger.info(u"sent \"%s\" %s" % (dev.name, 'dim to off'))
                 else:
                     self.generalLogger.info(u"Dimming %s by %s to %s" % (dev.name, dimBy, newBrightness))
-                    self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'DIM', [dev.id, newBrightness]])
+                    self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'DIM', dev.id, [newBrightness]])
                     dev.updateStateOnServer("brightnessLevel", newBrightness)
             else:
                     self.generalLogger.info(u"Ignoring Dim request for %s as device is Off" % (dev.name))
@@ -1932,12 +1869,18 @@ class Plugin(indigo.PluginBase):
             self.generalLogger.debug(u"SET COLOR LEVELS = \"%s\" %s" % (dev.name, action))
             self._processSetColorLevels(action, dev)
 
+    def brightenDimByTimer(self, pluginAction, dev):  # Dev is a LIFX Lamp
+
+        pass
+
+
+
     def _processTurnOn(self, pluginAction, dev, actionUi='on'):
         self.methodTracer.threaddebug(u"CLASS: Plugin")
 
         self.generalLogger.debug(u"LIFX 'processTurnOn' [%s]" % (self.globals['lifx'][dev.id]['ipAddress'])) 
 
-        self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'ON', [dev.id]])
+        self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'ON', dev.id, None])
 
         duration = self.globals['lifx'][dev.id]['durationOn']
         self.generalLogger.info(u"sent \"%s\" %s with duration of %s seconds" % (dev.name, actionUi, duration))
@@ -1947,7 +1890,7 @@ class Plugin(indigo.PluginBase):
 
         self.generalLogger.debug(u"LIFX 'processTurnOff' [%s]" % (self.globals['lifx'][dev.id]['ipAddress'])) 
 
-        self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'OFF', [dev.id]])
+        self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'OFF', dev.id, None])
 
         duration = self.globals['lifx'][dev.id]['durationOff']
         self.generalLogger.info(u"sent \"%s\" %s with duration of %s seconds" % (dev.name, actionUi, duration))
@@ -1958,7 +1901,7 @@ class Plugin(indigo.PluginBase):
         self.generalLogger.debug(u"LIFX 'processTurnOnOffToggle' [%s]" % (self.globals['lifx'][dev.id]['ipAddress'])) 
 
         onStateRequested = not dev.onState
-        if onStateRequested == True:
+        if onStateRequested:
             actionUi = "toggle from 'off' to 'on'"
             self._processTurnOn(pluginAction, dev, actionUi)
         else:
@@ -1974,10 +1917,10 @@ class Plugin(indigo.PluginBase):
                 actionUi = 'brighten'
             else:
                 actionUi = 'dim'  
-            self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'BRIGHTNESS', [dev.id, newBrightness]])
+            self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'BRIGHTNESS', dev.id, [newBrightness]])
             self.generalLogger.info(u"sent \"%s\" %s to %s with duration of %s seconds" % (dev.name, actionUi, newBrightness, duration))
         else:
-            self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'OFF', [dev.id]])
+            self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'OFF', dev.id, None])
             self.generalLogger.info(u"sent \"%s\" %s with duration of %s seconds" % (dev.name, 'dim to off', duration))
 
 
@@ -2017,7 +1960,7 @@ class Plugin(indigo.PluginBase):
                 kelvin = min(LIFX_KELVINS, key=lambda x:abs(x - whiteTemperature))
                 rgb, kelvinDescription = LIFX_KELVINS[kelvin]
 
-                self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'WHITE', [dev.id, whiteLevel, kelvin]])
+                self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'WHITE', dev.id, [whiteLevel, kelvin]])
 
                 self.generalLogger.info(u"sent \"%s\" set White Level to \"%s\" and White Temperature to \"%s\" with duration of %s seconds" % (dev.name, int(whiteLevel), kelvinDescription, duration))
 
@@ -2053,7 +1996,7 @@ class Plugin(indigo.PluginBase):
 
                     self.generalLogger.debug(u"ColorSys: \"%s\" R, G, B: %s, %s, %s = H: %s[%s], S: %s[%s], B: %s[%s]" % (dev.name, red, green, blue, hue, hsv_hue, saturation, hsv_saturation, brightness, hsv_brightness))
 
-                    self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'COLOR', [dev.id, hue, saturation, brightness]])
+                    self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'COLOR', dev.id, [hue, saturation, brightness]])
 
                     hueUi = '%s' % int(((hue  * 360.0) / 65535.0))
                     saturationUi = '%s' % int(((saturation  * 100.0) / 65535.0))
@@ -2080,7 +2023,7 @@ class Plugin(indigo.PluginBase):
             self.generalLogger.info(u"LIFX device \"%s\" does not support infrared - request to Turn On infrared ignored" % (dev.name))
             return
             
-        self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'INFRARED_ON', [dev.id]])
+        self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'INFRARED_ON', dev.id, None])
         self.generalLogger.info(u"sent \"%s\" turn on infrared" % (dev.name))
            
 
@@ -2096,7 +2039,7 @@ class Plugin(indigo.PluginBase):
             self.generalLogger.info(u"LIFX device \"%s\" does not support infrared - request to Turn Off infrared ignored" % (dev.name))
             return
             
-        self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'INFRARED_OFF', [dev.id]])
+        self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'INFRARED_OFF', dev.id, None])
         self.generalLogger.info(u"sent \"%s\" turn off infrared" % (dev.name))
 
 
@@ -2119,7 +2062,7 @@ class Plugin(indigo.PluginBase):
             self.generalLogger.error(u"Failed to set infrared maximum brightness for \"%s\" value '%s' is invalid." % (dev.name, errorInfraredBrightness))
             return
 
-        self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'INFRARED_SET', [dev.id, infraredBrightness]])
+        self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'INFRARED_SET', dev.id, [infraredBrightness]])
 
         infraredBrightnessUi = '%s' % int(float(infraredBrightness))
         self.generalLogger.info(u"sent \"%s\" set infrared maximum brightness to %s" % (dev.name, infraredBrightnessUi))
@@ -2131,7 +2074,7 @@ class Plugin(indigo.PluginBase):
 
         actionType = str(pluginAction.props.get('actionType', 'INVALID'))  # 'Standard' or 'Waveform'
 
-        if dev.states['connected'] == False or self.globals['lifx'][dev.id]['started'] == False:
+        if dev.states['connected'] == False or self.globals['lifx'][dev.id]['connected'] == False:
             self.generalLogger.info(u"Unable to apply action \"Set Color/White - %s\" to \"%s\" as device not connected" % (actionType, dev.name))
             return
 
@@ -2175,7 +2118,7 @@ class Plugin(indigo.PluginBase):
                 turnOnIfOff = True  # Default 'Turn On if Off' to True if error
 
 
-            self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'STANDARD', [dev.id, turnOnIfOff, mode, hue, saturation, brightness, kelvin, duration]])
+            self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'STANDARD', dev.id, [turnOnIfOff, mode, hue, saturation, brightness, kelvin, duration]])
 
             if mode == 'White':
                 if kelvin == '-':
@@ -2259,7 +2202,7 @@ class Plugin(indigo.PluginBase):
         except:
             typeWaveform = '0'  # Default TYpe of Waveform to '0' (Saw) if missing
 
-        self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_WAVEFORM, 'WAVEFORM', [dev.id, mode, hue, saturation, brightness, kelvin, transient, period, cycles, dutyCycle, typeWaveform]])
+        self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_WAVEFORM, 'WAVEFORM', dev.id, [mode, hue, saturation, brightness, kelvin, transient, period, cycles, dutyCycle, typeWaveform]])
 
         transientUi = ' Color will be returned to original.' if transient else ''
         periodUi = '%s' % int(period)
@@ -2286,7 +2229,7 @@ class Plugin(indigo.PluginBase):
     def processDiscoverDevices(self, pluginAction):
         self.methodTracer.threaddebug(u"CLASS: Plugin")
             
-        self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_LOW, 'DISCOVERY', []])
+        self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_LOW, 'DISCOVERY', None, None])
 
 
     def processPresetApply(self, pluginAction, dev):  # Dev is a LIFX Device
@@ -2294,7 +2237,7 @@ class Plugin(indigo.PluginBase):
 
         self.preset = indigo.variables[int(pluginAction.props.get('PresetId'))]
  
-        if dev.states['connected'] == False or self.globals['lifx'][dev.id]['started'] == False:
+        if dev.states['connected'] == False or self.globals['lifx'][dev.id]['connected'] == False:
             self.generalLogger.info(u"Unable to apply Preset \"%s\" to \"%s\" as device not connected" % (self.preset.name, dev.name))
             return
 
@@ -2337,7 +2280,7 @@ class Plugin(indigo.PluginBase):
             self.generalLogger.debug(u'LIFX PRESET QUEUE_PRIORITY_COMMAND [STANDARD]; Target for %s: TOIF=%s, Mode=%s, Hue=%s, Saturation=%s, Brightness=%s, Kelvin=%s, Duration=%s' % (dev.name, turnOnIfOff, mode, hue, saturation, brightness, kelvin, duration))   
 
 
-            self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_COMMAND, 'STANDARD', [dev.id, turnOnIfOff, mode, hue, saturation, brightness, kelvin, duration]])
+            self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'STANDARD', dev.id, [turnOnIfOff, mode, hue, saturation, brightness, kelvin, duration]])
 
             if mode == 'White':
                 if kelvin == '-':
@@ -2471,7 +2414,7 @@ class Plugin(indigo.PluginBase):
 
             self.generalLogger.debug(u'LIFX PRESET QUEUE_PRIORITY_COMMAND [WAVEFORM]; Target for %s: Mode=%s, Hue=%s, Saturation=%s, Brightness=%s, Kelvin=%s, Transient=%s, Period=%s, Cycles=%s, Duty Cycle=%s, Waveform=%s' % (dev.name, mode, hue, saturation, brightness, kelvin, transient, period, cycles, dutyCycle, typeWaveform))   
 
-            self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_WAVEFORM, 'WAVEFORM', [dev.id, mode, hue, saturation, brightness, kelvin, transient, period, cycles, dutyCycle, typeWaveform]])
+            self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_WAVEFORM, 'WAVEFORM', dev.id, [mode, hue, saturation, brightness, kelvin, transient, period, cycles, dutyCycle, typeWaveform]])
 
             transientUi = ' Color will be returned to original.' if transient else ''
             periodUi = '%s' % int(period)
@@ -2599,7 +2542,7 @@ class Plugin(indigo.PluginBase):
     def processPresetApplyDefineGenerator(self, filter="", valuesDict=None, typeId="", targetId=0):
         self.methodTracer.threaddebug(u"CLASS: Plugin")
 
-        preset_dict = []
+        preset_dict = list()
         preset_dict.append(("SELECT_PRESET", "- Select Preset -"))
 
         for preset in indigo.variables.iter():

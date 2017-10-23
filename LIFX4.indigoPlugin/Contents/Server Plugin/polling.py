@@ -11,19 +11,18 @@ except:
 import logging
 import sys
 import threading
+import time
 
 from constants import *
 
 class ThreadPolling(threading.Thread):
 
-    def __init__(self, globalsAndEvent):
+    def __init__(self, pluginGlobals, event):
 
         threading.Thread.__init__(self)
 
-        plugin, self.globals, self.pollStop = globalsAndEvent
-
-        global PLUGIN
-        PLUGIN = plugin
+        self.globals = pluginGlobals
+        self.pollStop = event
 
         self.previousPollingSeconds = self.globals['polling']['seconds']
 
@@ -45,7 +44,10 @@ class ThreadPolling(threading.Thread):
         try:  
             self.methodTracer.threaddebug(u"ThreadPolling")
 
-            self.pollingLogger.debug(u"Polling thread running")  
+            # self.pollingLogger.info(u"Polling thread waiting for 30 seconds")
+
+            # time.sleep(30)
+            self.pollingLogger.info(u"LIFX Polling thread now running")
 
             while not self.pollStop.wait(self.globals['polling']['seconds']):
 
@@ -57,53 +59,29 @@ class ThreadPolling(threading.Thread):
                     self.globals['debug']['previousDebugMethodTrace'] = self.globals['debug']['debugMethodTrace']
                     self.pollingLogger.setLevel(self.globals['debug']['debugMethodTrace'])
 
+                self.pollingLogger.debug(u"Start of While Loop ...")  # Message not quite at start as debug settings need to be checked first
+
                 # Check if polling seconds interval has changed and if so set accordingly
                 if self.globals['polling']['seconds'] != self.previousPollingSeconds:
                     self.pollingLogger.info(u"Changing to poll at %i second intervals (was %i seconds)" % (self.globals['polling']['seconds'], self.previousPollingSeconds))  
                     self.previousPollingSeconds = self.globals['polling']['seconds']
 
-                self.pollingLogger.debug(u"Start of While Loop ...")
                 if self.pollStop.isSet():
-                    if self.globals['polling']['forceThreadEnd'] == True:
+                    if self.globals['polling']['forceThreadEnd']:
                         break
                     else:
                         self.pollStop.clear()
+
                 self.pollingLogger.debug(u"Polling at %i second intervals" % (self.globals['polling']['seconds']))
-                if self.globals['polling']['quiesced'] == False:
+
+                if not self.globals['polling']['quiesced']:
 
                     self.globals['polling']['count'] += 1  # Increment polling count
 
-                    # Check if LIFX Lamps are responding to polls
-                    allResponding = True  # Assume all LIFX devices are responding
-                    numberNoAck = 0
-                    for devId in self.globals['lifx']:
-                        if ((len(self.globals['debug']['debugFilteredIpAddresses']) == 0) 
-                            or ((len(self.globals['debug']['debugFilteredIpAddresses']) > 0) 
-                                and ('ipAddress' in self.globals['lifx'][devId]) 
-                                and (self.globals['lifx'][devId]['ipAddress'] in self.globals['debug']['debugFilteredIpAddresses']))):
-                            dev_poll_check = self.globals['lifx'][devId]['lastResponseToPollCount'] + self.globals['polling']['missedPollLimit']
-                            self.pollingLogger.debug(u"Dev = '%s', Count = %s, LIFX LastResponse = %s, Missed Limit = %s, Check = %s" % (indigo.devices[devId].name, self.globals['polling']['count'], self.globals['lifx'][devId]['lastResponseToPollCount'], self.globals['polling']['missedPollLimit'], dev_poll_check))
-                            dev = indigo.devices[devId]
-                            if dev.enabled and (dev_poll_check < self.globals['polling']['count']) or (not self.globals['lifx'][devId]['started']):  # 'started' = device online
-                                numberNoAck += 1
-                                self.pollingLogger.debug(u"dev_poll_check < self.globals['polling']['count']")
-                                indigo.devices[devId].setErrorStateOnServer(u"no ack")
-                                dev.updateStateOnServer(key='connected', value='false', clearErrorState=False)
-                                allResponding = False  #  Indicate at least one light "not acknowledging" 
-                    if not allResponding:
-                        if self.globals['polling']['maxNoAckLimit'] > 0:
-                            if (self.globals['polling']['count'] > START_UP_REQUIRED_DISCOVERY_COUNT) and (numberNoAck > self.globals['polling']['maxNoAckLimit']):
-                                self.pollingLogger.error(u"Number of 'No Ack's [%i] exceeds the specified limit [%i] after %i polls - Plugin is being reloaded ...." % (numberNoAck, self.globals['polling']['maxNoAckLimit'], self.globals['polling']['count']))
-                                serverPlugin = indigo.server.getPlugin(self.globals['pluginInfo']['pluginId'])
-                                serverPlugin.restart(waitUntilDone=False)
-                                PLUGIN.sleep(60)
-
-                        self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_DISCOVERY, 'DISCOVERY', 0])  # Discover devices before polling LIFX devices for status updates
-                        self.pollingLogger.debug(u"QUEUE_PRIORITY_DISCOVERY = DISCOVERY")
-
-
-                    self.globals['queues']['messageToSend'].put([QUEUE_PRIORITY_POLLING, 'STATUSPOLLING', 0])  # Poll LIFX devices for status updates
-                    self.pollingLogger.debug(u"QUEUE_PRIORITY_POLLING = STATUSPOLLING")
+                    for dev in indigo.devices.iter("self"):
+                        lifxDevId = dev.id
+                        self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_STATUS_MEDIUM, 'STATUS', lifxDevId, None])
+                                 
 
             self.pollingLogger.debug(u"Polling thread ending")
 

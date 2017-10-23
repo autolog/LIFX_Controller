@@ -1,6 +1,27 @@
 <?xml version="1.0"?>
 
 <Devices>
+    <Device type="dimmer" id="lifxGroup">
+        <Name>LIFX Group</Name>
+        <ConfigUI>
+            <Field id="lifxDevicesList" type="list"  default="_newlifxname|_NewLifxName|0" readonly="YES" rows="5" alwaysUseInDialogHeightCalc="true">
+                <Label>Select LIFX Devices:</Label>
+                <List class="self" method="lifxDevicesList" dynamicReload="true"/>
+                <CallbackMethod>lifxDevicesListSelection</CallbackMethod>
+            </Field>
+            <Field id="updateAlexaNamesListLabel" type="label" fontColor="darkgray" alwaysUseInDialogHeightCalc="true" alignWithControl="true">
+                <Label>^ Select the LIFX devices you wish to be part of the group.</Label>
+            </Field>
+        </ConfigUI>
+        <UiDisplayStateId>onOffState</UiDisplayStateId>
+    </Device>
+
+
+
+
+
+
+
 	<Device type="dimmer" id="lifxDevice">
 		<Name>LIFX Device</Name>
 
@@ -33,6 +54,10 @@
                 visibleBindingId="overrideDefaultPluginDurations" visibleBindingValue="true">
                 <Label>Color / White Duration:</Label>
             </Field>
+            <Field type="checkbox" id="ignoreNoAck" defaultValue="false" tooltip="Tick to ignore a 'no ack' and set LIFX device to 'off'">
+                <Label>No Ack:</Label>
+                <Description>Enable to ignore 'no ack' and set device to State 'off' instead.</Description>
+            </Field>
         </ConfigUI>
         
 		<States>
@@ -41,6 +66,11 @@
                 <ValueType>Boolean</ValueType>
                 <TriggerLabel>Connected</TriggerLabel>
                 <ControlPageLabel>Connected</ControlPageLabel>
+            </State>
+           <State id="noAckState">
+                <ValueType>Boolean</ValueType>
+                <TriggerLabel>'no ack' State</TriggerLabel>
+                <ControlPageLabel>'no ack' State</ControlPageLabel>
             </State>
 
            <State id="ipAddress">

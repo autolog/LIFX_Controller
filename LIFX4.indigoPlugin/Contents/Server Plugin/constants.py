@@ -6,6 +6,10 @@
 
 # plugin Constants
 
+LIFX_DEVICE_TYPEID = 'lifxDevice'  # See definition in Devices.xml
+
+
+
 # Number of discoveries to executed at start-up
 START_UP_REQUIRED_DISCOVERY_COUNT = 10 
 
@@ -34,6 +38,16 @@ LIFX_PRODUCTS[28] = (True,  False, False, 'LIFX BR30')
 LIFX_PRODUCTS[29] = (True,  True,  False, 'LIFX + A19')
 LIFX_PRODUCTS[30] = (True,  True,  False, 'LIFX + BR30')
 LIFX_PRODUCTS[31] = (True,  False, True,  'LIFX Z')
+LIFX_PRODUCTS[36] = (True,  False, False, 'LIFX Downlight')
+LIFX_PRODUCTS[37] = (True,  False, False, 'LIFX Downlight')
+LIFX_PRODUCTS[43] = (True,  False, False, 'LIFX A19')
+LIFX_PRODUCTS[44] = (True,  False, False, 'LIFX BR30')
+LIFX_PRODUCTS[45] = (True,  True,  False, 'LIFX+ A19')
+LIFX_PRODUCTS[46] = (True,  True,  False, 'LIFX+ BR30')
+LIFX_PRODUCTS[49] = (True,  False, False, 'LIFX Mini')
+LIFX_PRODUCTS[50] = (False, False, False, 'LIFX Mini White')
+LIFX_PRODUCTS[51] = (False, False, False, 'LIFX Mini Day and Dusk')
+LIFX_PRODUCTS[52] = (True,  False, False, 'LIFX GU10')
 
 LIFX_PRODUCT_SUPPORTS_COLOR = 0
 LIFX_PRODUCT_SUPPORTS_INFRARED = 1
@@ -103,7 +117,7 @@ DEV_ECHO_REQUEST        = 58   # Hex = 3A
 DEV_ECHO_RESPONSE       = 59   # Hex = 3B
 LIGHT_GET                = 101  # Hex = 65
 LIGHT_SET_COLOR          = 102  # Hex = 66
-LIGHT_SET_WAVEFORM       = 103  # Hex = 67 *** Unofficial ***    
+LIGHT_SET_WAVEFORM       = 103  # Hex = 67 
 LIGHT_STATE              = 107  # Hex = 6B
 LIGHT_GET_POWER          = 116  # Hex = 74
 LIGHT_SET_POWER          = 117  # Hex = 75

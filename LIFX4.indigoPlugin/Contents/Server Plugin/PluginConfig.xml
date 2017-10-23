@@ -92,13 +92,13 @@
         <Label>General:</Label>
         <Description>Debug 'general' processing.</Description>
     </Field>
-    <Field type="checkbox" id="monitorSendReceive" default="false" visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true">
-        <Label>Monitor Send / Receive:</Label>
-        <Description>Monitor messages sent and Received to/from LIFX devices.</Description>
+    <Field type="checkbox" id="monitorLifxlanHandler" default="false" visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true">
+        <Label>Monitor Lifxlan Handler:</Label>
+        <Description>Monitor 'Lifxlan Handler' processing.</Description>
     </Field>
-    <Field type="checkbox" id="debugSendReceive" default="false" visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true">
-        <Label>Debug Send / Receive:</Label>
-        <Description>Debug 'send / Receive to LIFX devices' processing.</Description>
+    <Field type="checkbox" id="debugLifxlanHandler" default="false" visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true">
+        <Label>Debug Lifxlan Handler:</Label>
+        <Description>Debug 'Lifxlan Handler' processing.</Description>
     </Field>
     <Field type="checkbox" id="debugMethodTrace" default="false" visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true">
         <Label>Method Trace:</Label>

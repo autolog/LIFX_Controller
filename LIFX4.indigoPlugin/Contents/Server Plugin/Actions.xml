@@ -2,7 +2,7 @@
 
 <Actions>
 
-    <Action id="setColorWhite" deviceFilter="self.lifxDevice">
+    <Action id="setColorWhite" deviceFilter="self.lifxDevice" uiPath="DeviceActions">
         <Name>Set Color / White</Name>
         <CallbackMethod>setColorWhite</CallbackMethod>
         <ConfigUI>
@@ -531,7 +531,7 @@
         </ConfigUI>
     </Action>
 
-    <Action id="applyPreset" deviceFilter="self.lifxDevice">
+    <Action id="applyPreset" deviceFilter="self.lifxDevice" uiPath="DeviceActions">
         <Name>Apply Preset</Name>
         <CallbackMethod>processPresetApply</CallbackMethod>
         <ConfigUI>
@@ -550,32 +550,40 @@
         </ConfigUI>
     </Action>
 
-<!--     <Action id="brightenByTimer" deviceFilter="self.lifxDevice">
+<!--      <Action id="brightenDimByTimer" deviceFilter="self.lifxDevice" uiPath="DeviceActions">
         <Name>Brighten By Timer</Name>
-        <CallbackMethod>Brighten By Timer</CallbackMethod>
+        <CallbackMethod>brightenDimByTimer</CallbackMethod>
         <ConfigUI>
-            <Field id="amountToBrightenBy" type="menu" defaultValue="2">
+            <Field id="optionBrightenDimByTimer" type="menu" defaultValue="1">
+                <Label>Option:</Label>
+                <List>
+                    <Option value="1">Start</Option>
+                    <Option value="0">Stop</Option>
+               </List>
+            </Field>
+
+            <Field id="amountToBrightenDimByTimer" type="textfield" defaultValue="2" visibleBindingId="optionBrightenDimByTimer" visibleBindingValue="1">
                 <Label>Amount:</Label>
                <Description>Amount</Description>
             </Field>
-            <Field id="timerInterval" type="textfield" defaultValue="0.3">
+            <Field id="timerInterval" type="textfield" defaultValue="0.3" visibleBindingId="optionBrightenDimByTimer" visibleBindingValue="1">
                 <Label>Timer Interval:</Label>
                 <Description>Timer Interval:</Description>
             </Field>
         </ConfigUI>
     </Action>
  -->
-    <Action id="turnOnInfrared" deviceFilter="self.lifxDevice">
+    <Action id="turnOnInfrared" deviceFilter="self.lifxDevice" uiPath="DeviceActions">
         <Name>Turn On Infrared</Name>
         <CallbackMethod>turnOnInfrared</CallbackMethod>
     </Action>
 
-    <Action id="turnOffInfrared" deviceFilter="self.lifxDevice">
+    <Action id="turnOffInfrared" deviceFilter="self.lifxDevice" uiPath="DeviceActions">
         <Name>Turn Off Infrared</Name>
         <CallbackMethod>turnOffInfrared</CallbackMethod>
     </Action>
 
-    <Action id="setInfraredBrightness" deviceFilter="self.lifxDevice">
+    <Action id="setInfraredBrightness" deviceFilter="self.lifxDevice" uiPath="DeviceActions">
         <Name>Set Infrared Brightness</Name>
         <CallbackMethod>setInfraredBrightness</CallbackMethod>
         <ConfigUI>
@@ -584,7 +592,7 @@
             </Field>
         </ConfigUI>
     </Action>
-    <Action id="discoverDevices">
+    <Action id="discoverDevices" uiPath="DeviceActions">
         <Name>Discover LIFX Devices</Name>
         <CallbackMethod>processDiscoverDevices</CallbackMethod>
     </Action>
