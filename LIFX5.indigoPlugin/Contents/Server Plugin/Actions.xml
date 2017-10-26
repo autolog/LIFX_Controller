@@ -550,29 +550,49 @@
         </ConfigUI>
     </Action>
 
-<!--      <Action id="brightenDimByTimer" deviceFilter="self.lifxDevice" uiPath="DeviceActions">
-        <Name>Brighten By Timer</Name>
+     <Action id="brightenDimByTimer" deviceFilter="self.lifxDevice" uiPath="DeviceActions">
+        <Name>Brighten / Dim By Timer</Name>
         <CallbackMethod>brightenDimByTimer</CallbackMethod>
         <ConfigUI>
-            <Field id="optionBrightenDimByTimer" type="menu" defaultValue="1">
+            <Field id="optionBrightenDimByTimer" type="menu" defaultValue="1" alwaysUseInDialogHeightCalc="true">
                 <Label>Option:</Label>
                 <List>
-                    <Option value="1">Start</Option>
-                    <Option value="0">Stop</Option>
+                    <Option value="1">Start Brighten</Option>
+                    <Option value="2">Start Dim</Option>
+                    <Option value="3">Toggle Start Brighten/ Dim</Option>
+                    <Option value="0">Stop Brighten / Dim</Option>
                </List>
             </Field>
-
-            <Field id="amountToBrightenDimByTimer" type="textfield" defaultValue="2" visibleBindingId="optionBrightenDimByTimer" visibleBindingValue="1">
-                <Label>Amount:</Label>
-               <Description>Amount</Description>
+            <Field id="amountToBrightenBy" type="textfield" defaultValue="2" visibleBindingId="optionBrightenDimByTimer" visibleBindingValue="1,3" alwaysUseInDialogHeightCalc="true">
+                <Label>Brighten Increment:</Label>
             </Field>
-            <Field id="timerInterval" type="textfield" defaultValue="0.3" visibleBindingId="optionBrightenDimByTimer" visibleBindingValue="1">
-                <Label>Timer Interval:</Label>
-                <Description>Timer Interval:</Description>
+            <Field id="amountToBrightenByHelp" type="label" fontColor="darkgray" fontSize="small" alignWithControl="true" visibleBindingId="optionBrightenDimByTimer" visibleBindingValue="1,3" alwaysUseInDialogHeightCalc="true">
+                <Label>^ The increment integer value used to brighten the LIFX device at each timer interval. Valid values are integers from 1 to 10.</Label>
+            </Field>
+            <Field id="brightenTimerInterval" type="textfield" defaultValue="0.3" visibleBindingId="optionBrightenDimByTimer" visibleBindingValue="1,3">
+                <Label>Brighten Timer Interval:</Label>
+            </Field>
+            <Field id="brightenTimerIntervalHelp" type="label" fontColor="darkgray" fontSize="small" alignWithControl="true" visibleBindingId="optionBrightenDimByTimer" visibleBindingValue="1,3" alwaysUseInDialogHeightCalc="true">
+                <Label>^ The brighten time interval in seconds (or part thereof) between each brighten or dim action. Minimum Value is 0.1 (tenth of a second).</Label>
+            </Field>
+            <Field id="amountToDimBy" type="textfield" defaultValue="2" visibleBindingId="optionBrightenDimByTimer" visibleBindingValue="2,3" alwaysUseInDialogHeightCalc="true">
+                <Label>Dim Decrement:</Label>
+            </Field>
+            <Field id="amountToDimByHelp" type="label" fontColor="darkgray" fontSize="small" alignWithControl="true" visibleBindingId="optionBrightenDimByTimer" visibleBindingValue="2,3" alwaysUseInDialogHeightCalc="true">
+                <Label>^ The decrement integer value used to dim the LIFX device at each timer interval. Valid values are integers from 1 to 10.</Label>
+            </Field>
+            <Field id="dimTimerInterval" type="textfield" defaultValue="0.3" visibleBindingId="optionBrightenDimByTimer" visibleBindingValue="2,3">
+                <Label>Dim Timer Interval:</Label>
+            </Field>
+            <Field id="dimTimerIntervalHelp" type="label" fontColor="darkgray" fontSize="small" alignWithControl="true" visibleBindingId="optionBrightenDimByTimer" visibleBindingValue="2,3" alwaysUseInDialogHeightCalc="true">
+                <Label>^ The dim time interval in seconds (or part thereof) between each brighten or dim action. Minimum Value is 0.1 (tenth of a second).</Label>
+            </Field>
+            <Field id="timerStopHelp" type="label" fontColor="darkgray" fontSize="small" alignWithControl="true" visibleBindingId="optionBrightenDimByTimer" visibleBindingValue="0" alwaysUseInDialogHeightCalc="true">
+                <Label>^ The action to stop the current brightening or dimming by timer.</Label>
             </Field>
         </ConfigUI>
     </Action>
- -->
+
     <Action id="turnOnInfrared" deviceFilter="self.lifxDevice" uiPath="DeviceActions">
         <Name>Turn On Infrared</Name>
         <CallbackMethod>turnOnInfrared</CallbackMethod>

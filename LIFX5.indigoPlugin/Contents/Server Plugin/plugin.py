@@ -46,8 +46,8 @@ class Plugin(indigo.PluginBase):
         self.globals['debug']['debugFilteredIpAddressesUI'] = ''  # Set to LIFX Lamp IP Address(es) to limit processing for debug purposes (UI version)
         self.globals['debug']['debugGeneral'] = logging.INFO  # For general debugging of the main thread
 
-        self.globals['debug']['monitorLifxlanHandler'] = logging.DEBUG  # For monitoring lifxlan handler
-        self.globals['debug']['debugLifxlanHandler'] = logging.DEBUG  # For debugging  lifxlan handler
+        self.globals['debug']['monitorLifxlanHandler'] = logging.INFO  # For monitoring lifxlan handler
+        self.globals['debug']['debugLifxlanHandler'] = logging.INFO  # For debugging  lifxlan handler
 
         self.globals['debug']['debugMethodTrace'] = logging.INFO  # For displaying method invocations i.e. trace method
         self.globals['debug']['debugPolling'] = logging.INFO  # For polling debugging
@@ -649,7 +649,7 @@ class Plugin(indigo.PluginBase):
             if origDev.name != newDev.name: 
                 if bool(newDev.pluginProps.get('setLifxLabelFromIndigoDeviceName', False)):  # Only change LIFX Lamp label if option set
                     self.generalLogger.info(u"Changing LIFX Lamp label from '%s' to '%s'" % (origDev.name, newDev.name))
-                    self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'SETLABEL', newDev.id, None])
+                    self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND_HIGH, 'SETLABEL', newDev.id, None])
         indigo.PluginBase.deviceUpdated(self, origDev, newDev)
 
         return  
@@ -1834,7 +1834,7 @@ class Plugin(indigo.PluginBase):
         ###### BRIGHTEN BY ######
         elif action.deviceAction ==indigo.kDeviceAction.BrightenBy:
             if not dev.onState:
-                self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'IMMEDIATE-ON', dev.id, None])
+                self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND_HIGH, 'IMMEDIATE-ON', dev.id, None])
 
             if dev.brightness < 100:
                 brightenBy = action.actionValue #  action.actionValue contains brightness increase value
@@ -1842,7 +1842,7 @@ class Plugin(indigo.PluginBase):
                 if newBrightness > 100:
                     newBrightness = 100
                 self.generalLogger.info(u"Brightening %s by %s to %s" % (dev.name, brightenBy, newBrightness))
-                self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'BRIGHTEN', dev.id, [newBrightness]])
+                self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND_HIGH, 'BRIGHTEN', dev.id, [newBrightness]])
                 dev.updateStateOnServer("brightnessLevel", newBrightness)
             else:
                 self.generalLogger.info(u"Ignoring Brighten request for %s as device is at full brightness" % (dev.name))
@@ -1855,11 +1855,11 @@ class Plugin(indigo.PluginBase):
                 if newBrightness < 0:
                     newBrightness = 0
                     dev.updateStateOnServer("brightnessLevel", newBrightness)
-                    self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'OFF', dev.id, None])
+                    self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND_HIGH, 'OFF', dev.id, None])
                     self.generalLogger.info(u"sent \"%s\" %s" % (dev.name, 'dim to off'))
                 else:
                     self.generalLogger.info(u"Dimming %s by %s to %s" % (dev.name, dimBy, newBrightness))
-                    self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'DIM', dev.id, [newBrightness]])
+                    self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND_HIGH, 'DIM', dev.id, [newBrightness]])
                     dev.updateStateOnServer("brightnessLevel", newBrightness)
             else:
                     self.generalLogger.info(u"Ignoring Dim request for %s as device is Off" % (dev.name))
@@ -1870,17 +1870,47 @@ class Plugin(indigo.PluginBase):
             self._processSetColorLevels(action, dev)
 
     def brightenDimByTimer(self, pluginAction, dev):  # Dev is a LIFX Lamp
+        self.methodTracer.threaddebug(u"CLASS: Plugin")
+        #self.generalLogger.info(u"brightenDimByTimer: pluginAction\n%s" % pluginAction)
 
-        pass
+        actionProps = pluginAction.props
+        option = int(actionProps['optionBrightenDimByTimer'])
+        timerInterval = float(actionProps['timerInterval'])
 
+        if option == 0:  # Stop brighten / dim
+            self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND_HIGH, 'STOP_BRIGHTEN_DIM_BY_TIMER', dev.id, [option, None, None]])
+            self.generalLogger.info(u"sent \"%s\" stop brighten / dim" % (dev.name))
+        else:
+            if option == 3:  # Start dim / brighten toggle
+                if 'lastDimBrightenToggle' in self.globals['lifx'][dev.id]:
+                    if self.globals['lifx'][dev.id]['lastDimBrightenToggle'] == 1:
+                        option = 2
+                    else:
+                        option = 1
+                else:
+                    option = 1 
+                self.globals['lifx'][dev.id]['lastDimBrightenToggle'] = option
+                self.generalLogger.info(u"lastDimBrightenToggle for \"%s\" = %s" % (dev.name, self.globals['lifx'][dev.id]['lastDimBrightenToggle']))
 
+            if option == 1:  # Start brighten
+                amountToBrightenDimBy = int(actionProps['amountToBrightenBy'])
+                command = 'BRIGHTEN_BY_TIMER'
+                brightenDimUi = 'Brightening'
+                self.globals['lifx'][dev.id]['lastDimBrightenToggle'] = option
+            elif option == 2:  # Start dim
+                amountToBrightenDimBy = int(actionProps['amountToDimBy'])
+                command = 'DIM_BY_TIMER'
+                brightenDimUi = 'Dimming'
+                self.globals['lifx'][dev.id]['lastDimBrightenToggle'] = option
+            self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND_HIGH, command, dev.id, [option, amountToBrightenDimBy, timerInterval]])
+            self.generalLogger.info(u"sent \"%s\" %s by %s every %s second(s)" % (dev.name, brightenDimUi, amountToBrightenDimBy, timerInterval))
 
     def _processTurnOn(self, pluginAction, dev, actionUi='on'):
         self.methodTracer.threaddebug(u"CLASS: Plugin")
 
         self.generalLogger.debug(u"LIFX 'processTurnOn' [%s]" % (self.globals['lifx'][dev.id]['ipAddress'])) 
 
-        self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'ON', dev.id, None])
+        self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND_HIGH, 'ON', dev.id, None])
 
         duration = self.globals['lifx'][dev.id]['durationOn']
         self.generalLogger.info(u"sent \"%s\" %s with duration of %s seconds" % (dev.name, actionUi, duration))
@@ -1890,7 +1920,7 @@ class Plugin(indigo.PluginBase):
 
         self.generalLogger.debug(u"LIFX 'processTurnOff' [%s]" % (self.globals['lifx'][dev.id]['ipAddress'])) 
 
-        self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'OFF', dev.id, None])
+        self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND_HIGH, 'OFF', dev.id, None])
 
         duration = self.globals['lifx'][dev.id]['durationOff']
         self.generalLogger.info(u"sent \"%s\" %s with duration of %s seconds" % (dev.name, actionUi, duration))
@@ -1917,10 +1947,10 @@ class Plugin(indigo.PluginBase):
                 actionUi = 'brighten'
             else:
                 actionUi = 'dim'  
-            self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'BRIGHTNESS', dev.id, [newBrightness]])
+            self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND_HIGH, 'BRIGHTNESS', dev.id, [newBrightness]])
             self.generalLogger.info(u"sent \"%s\" %s to %s with duration of %s seconds" % (dev.name, actionUi, newBrightness, duration))
         else:
-            self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'OFF', dev.id, None])
+            self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND_HIGH, 'OFF', dev.id, None])
             self.generalLogger.info(u"sent \"%s\" %s with duration of %s seconds" % (dev.name, 'dim to off', duration))
 
 
@@ -1960,7 +1990,7 @@ class Plugin(indigo.PluginBase):
                 kelvin = min(LIFX_KELVINS, key=lambda x:abs(x - whiteTemperature))
                 rgb, kelvinDescription = LIFX_KELVINS[kelvin]
 
-                self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'WHITE', dev.id, [whiteLevel, kelvin]])
+                self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND_HIGH, 'WHITE', dev.id, [whiteLevel, kelvin]])
 
                 self.generalLogger.info(u"sent \"%s\" set White Level to \"%s\" and White Temperature to \"%s\" with duration of %s seconds" % (dev.name, int(whiteLevel), kelvinDescription, duration))
 
@@ -1996,7 +2026,7 @@ class Plugin(indigo.PluginBase):
 
                     self.generalLogger.debug(u"ColorSys: \"%s\" R, G, B: %s, %s, %s = H: %s[%s], S: %s[%s], B: %s[%s]" % (dev.name, red, green, blue, hue, hsv_hue, saturation, hsv_saturation, brightness, hsv_brightness))
 
-                    self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'COLOR', dev.id, [hue, saturation, brightness]])
+                    self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND_HIGH, 'COLOR', dev.id, [hue, saturation, brightness]])
 
                     hueUi = '%s' % int(((hue  * 360.0) / 65535.0))
                     saturationUi = '%s' % int(((saturation  * 100.0) / 65535.0))
@@ -2023,7 +2053,7 @@ class Plugin(indigo.PluginBase):
             self.generalLogger.info(u"LIFX device \"%s\" does not support infrared - request to Turn On infrared ignored" % (dev.name))
             return
             
-        self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'INFRARED_ON', dev.id, None])
+        self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND_HIGH, 'INFRARED_ON', dev.id, None])
         self.generalLogger.info(u"sent \"%s\" turn on infrared" % (dev.name))
            
 
@@ -2039,7 +2069,7 @@ class Plugin(indigo.PluginBase):
             self.generalLogger.info(u"LIFX device \"%s\" does not support infrared - request to Turn Off infrared ignored" % (dev.name))
             return
             
-        self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'INFRARED_OFF', dev.id, None])
+        self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND_HIGH, 'INFRARED_OFF', dev.id, None])
         self.generalLogger.info(u"sent \"%s\" turn off infrared" % (dev.name))
 
 
@@ -2062,7 +2092,7 @@ class Plugin(indigo.PluginBase):
             self.generalLogger.error(u"Failed to set infrared maximum brightness for \"%s\" value '%s' is invalid." % (dev.name, errorInfraredBrightness))
             return
 
-        self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'INFRARED_SET', dev.id, [infraredBrightness]])
+        self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND_HIGH, 'INFRARED_SET', dev.id, [infraredBrightness]])
 
         infraredBrightnessUi = '%s' % int(float(infraredBrightness))
         self.generalLogger.info(u"sent \"%s\" set infrared maximum brightness to %s" % (dev.name, infraredBrightnessUi))
@@ -2118,7 +2148,7 @@ class Plugin(indigo.PluginBase):
                 turnOnIfOff = True  # Default 'Turn On if Off' to True if error
 
 
-            self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'STANDARD', dev.id, [turnOnIfOff, mode, hue, saturation, brightness, kelvin, duration]])
+            self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND_HIGH, 'STANDARD', dev.id, [turnOnIfOff, mode, hue, saturation, brightness, kelvin, duration]])
 
             if mode == 'White':
                 if kelvin == '-':
@@ -2277,10 +2307,10 @@ class Plugin(indigo.PluginBase):
 
             turnOnIfOff = False if (turnOnIfOff == '0') else True 
 
-            self.generalLogger.debug(u'LIFX PRESET QUEUE_PRIORITY_COMMAND [STANDARD]; Target for %s: TOIF=%s, Mode=%s, Hue=%s, Saturation=%s, Brightness=%s, Kelvin=%s, Duration=%s' % (dev.name, turnOnIfOff, mode, hue, saturation, brightness, kelvin, duration))   
+            self.generalLogger.debug(u'LIFX PRESET QUEUE_PRIORITY_COMMAND_HIGH [STANDARD]; Target for %s: TOIF=%s, Mode=%s, Hue=%s, Saturation=%s, Brightness=%s, Kelvin=%s, Duration=%s' % (dev.name, turnOnIfOff, mode, hue, saturation, brightness, kelvin, duration))   
 
 
-            self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND, 'STANDARD', dev.id, [turnOnIfOff, mode, hue, saturation, brightness, kelvin, duration]])
+            self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND_HIGH, 'STANDARD', dev.id, [turnOnIfOff, mode, hue, saturation, brightness, kelvin, duration]])
 
             if mode == 'White':
                 if kelvin == '-':
@@ -2412,7 +2442,7 @@ class Plugin(indigo.PluginBase):
                 self.generalLogger.error(u"LIFX Preset %s for %s hasn't been applied. Waveform[W] value specified in preset is invalid: %s" % (self.preset.name, dev.name, typeWaveform))
                 return
 
-            self.generalLogger.debug(u'LIFX PRESET QUEUE_PRIORITY_COMMAND [WAVEFORM]; Target for %s: Mode=%s, Hue=%s, Saturation=%s, Brightness=%s, Kelvin=%s, Transient=%s, Period=%s, Cycles=%s, Duty Cycle=%s, Waveform=%s' % (dev.name, mode, hue, saturation, brightness, kelvin, transient, period, cycles, dutyCycle, typeWaveform))   
+            self.generalLogger.debug(u'LIFX PRESET QUEUE_PRIORITY_COMMAND_HIGH [WAVEFORM]; Target for %s: Mode=%s, Hue=%s, Saturation=%s, Brightness=%s, Kelvin=%s, Transient=%s, Period=%s, Cycles=%s, Duty Cycle=%s, Waveform=%s' % (dev.name, mode, hue, saturation, brightness, kelvin, transient, period, cycles, dutyCycle, typeWaveform))   
 
             self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_WAVEFORM, 'WAVEFORM', dev.id, [mode, hue, saturation, brightness, kelvin, transient, period, cycles, dutyCycle, typeWaveform]])
 
