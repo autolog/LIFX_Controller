@@ -16,12 +16,6 @@
         <UiDisplayStateId>onOffState</UiDisplayStateId>
     </Device>
 
-
-
-
-
-
-
 	<Device type="dimmer" id="lifxDevice">
 		<Name>LIFX Device</Name>
 

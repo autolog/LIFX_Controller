@@ -80,7 +80,7 @@ class ThreadPolling(threading.Thread):
 
                     for dev in indigo.devices.iter("self"):
                         lifxDevId = dev.id
-                        self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_STATUS_MEDIUM, 'STATUS', lifxDevId, None])
+                        self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_STATUS_MEDIUM, CMD_STATUS, lifxDevId, None])
                                  
 
             self.pollingLogger.debug(u"Polling thread ending")
