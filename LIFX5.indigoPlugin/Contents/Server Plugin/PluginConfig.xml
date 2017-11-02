@@ -34,11 +34,15 @@
         <Label>Specify maximum number of polls allowed to be missed before a LIFX Lamp will be flagged with a 'no ack'</Label>
     </Field>
 
-    <Field id="maxNoAckLimit" type="textfield" defaultValue="0" enabledBindingId="statusPolling" tooltip="Specify maximum number of 'no ack's allowed before plugin will be reloaded">
-        <Label>Max No Ack limit?:</Label>
+    <Field id="separator-6" type="separator"/>  
+    <Field id="help-1B" type="label">
+        <Label>Discovery is used to find LIFX devices on the network. Repeated discoveries may be required if LIFX devices aren't found.</Label>
+    </Field>
+    <Field id="discoveryMinutes" type="textfield" defaultValue="5" tooltip="Specify the number of minutes between discoveries. It must be a positive integer e.g 1, 2, 5 etc.">
+        <Label>Discovery Minutes:</Label>
     </Field>
     <Field id="help-3" type="label" fontColor="darkgray" fontSize="small" alignWithControl="true">
-        <Label>Specify maximum number of 'no ack's allowed before plugin will be reloaded. A value of zero means don't reload plugin regardles of number of 'no ack's</Label>
+        <Label>^ Specify the number of minutes between discoveries. It must be a positive integer e.g 1, 2, 5 etc.</Label>
     </Field>
     <Field id="separator-2" type="separator"/>  
 
@@ -108,8 +112,6 @@
         <Label>Debug Polling:</Label>
         <Description>Debug 'polling' processing.</Description>
     </Field>
-
-    <Field id="separator-6" type="separator" visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true"/> 
 
     <Field type="textfield" id="debugFilteredIpAddresses" defaultValue="" visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true">
         <Label>LIFX Lamp Filter IP Address(es):</Label>

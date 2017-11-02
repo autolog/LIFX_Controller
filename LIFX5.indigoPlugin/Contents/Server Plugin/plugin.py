@@ -85,8 +85,8 @@ class Plugin(indigo.PluginBase):
 
         # Initialise dictionary to store message queues
         self.globals['queues'] = {}
-        self.globals['queues']['lifxlanHandler'] = {}  # There will be one 'messageToSend' queue for each LIFX device - set-up in LIFX device start
-        self.globals['queues']['initialised'] = {} # There will be one 'initialised' flag for each LIFX device - set-up in LIFX device start
+        self.globals['queues']['lifxlanHandler'] = {}
+        self.globals['queues']['initialised'] = False
 
 
         # Initialise dictionary to store threads
@@ -104,7 +104,6 @@ class Plugin(indigo.PluginBase):
         self.globals['polling']['forceThreadEnd'] = False
         self.globals['polling']['quiesced'] = False
         self.globals['polling']['missedPollLimit'] = int(2)  # Default to 2 missed polls
-        self.globals['polling']['maxNoAckLimit'] = int(0)  # Default to zero 'no ack's i.e. effectively don't reload plugin
         self.globals['polling']['count'] = int(0)
         self.globals['polling']['trigger'] = int(0)
 
@@ -114,6 +113,9 @@ class Plugin(indigo.PluginBase):
 
         # Initialise dictionary for update checking
         self.globals['update'] = {}
+
+        # Initialise dictionary for discovery processing
+        self.globals['discovery'] = {}
 
         # Set Plugin Config Values
         self.closedPrefsConfigUi(pluginPrefs, False)
@@ -157,7 +159,8 @@ class Plugin(indigo.PluginBase):
 
         # Create lifxlanHandler process queue
         self.globals['queues']['lifxlanHandler'] = Queue.PriorityQueue()  # Used to queue lifxlanHandler commands
-
+        self.globals['queues']['initialised'] = True
+        
         self.globals['threads']['lifxlanHandler']['event']  = threading.Event()
         self.globals['threads']['lifxlanHandler']['thread'] = ThreadLifxlanHandler(self.globals, self.globals['threads']['lifxlanHandler']['event'])
         self.globals['threads']['lifxlanHandler']['thread'].start()
@@ -194,13 +197,15 @@ class Plugin(indigo.PluginBase):
             else:
                 self.globals['polling']['missedPollLimit'] = int(360)  # Default to 6 minutes
 
-            if "maxNoAckLimit" in valuesDict:
+            if "discoveryMinutes" in valuesDict:
                 try:
-                    temp = int(valuesDict["maxNoAckLimit"])
+                    temp = int(valuesDict["discoveryMinutes"])
+                    if temp < 1:
+                        raise
                 except:
                     errorDict = indigo.Dict()
-                    errorDict["maxNoAckLimit"] = "Invalid number for Max No Ack limit"
-                    errorDict["showAlertText"] = "The number of 'No Ack's limit must be specified as an integer e.g 0, 1, 2, 5 etc."
+                    errorDict["discoveryMinutes"] = "Invalid number Discovery Minutes"
+                    errorDict["showAlertText"] = "The number of minutes between discoveries must be a positive integer e.g 1, 2, 5 etc."
                     return (False, valuesDict, errorDict)
 
             if "defaultDurationDimBrighten" in valuesDict:
@@ -278,7 +283,8 @@ class Plugin(indigo.PluginBase):
             self.globals['polling']['status']          = bool(valuesDict.get("statusPolling", False))
             self.globals['polling']['seconds']         = float(valuesDict.get("pollingSeconds", float(300.0)))  # Default to 5 minutes
             self.globals['polling']['missedPollLimit'] = int(valuesDict.get("missedPollLimit", int(360)))  # Default to 6 minutes
-            self.globals['polling']['maxNoAckLimit']   = int(valuesDict.get("maxNoAckLimit", int(0)))  # Default to Zero (no check)
+
+            self.globals['discovery']['minutes'] = int(valuesDict.get("discoveryMinutes", int(5)))  # Default to 5 minutes
 
             self.globals['pluginConfigDefault'] = {}
             self.globals['pluginConfigDefault']['durationDimBrighten'] = float(valuesDict.get("defaultDurationDimBrighten", float(1.0)))  # Default to one second
