@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 
 <Devices>
-    <Device type="dimmer" id="lifxGroup">
+<!--     <Device type="dimmer" id="lifxGroup">
         <Name>LIFX Group</Name>
         <ConfigUI>
             <Field id="lifxDevicesList" type="list"  default="_newlifxname|_NewLifxName|0" readonly="YES" rows="5" alwaysUseInDialogHeightCalc="true">
@@ -16,7 +16,7 @@
         <UiDisplayStateId>onOffState</UiDisplayStateId>
     </Device>
 
-	<Device type="dimmer" id="lifxDevice">
+ -->	<Device type="dimmer" id="lifxDevice">
 		<Name>LIFX Device</Name>
 
         <ConfigUI>
@@ -56,41 +56,46 @@
         
 		<States>
 
-           <State id="connected">
+            <State id="connected">
                 <ValueType>Boolean</ValueType>
                 <TriggerLabel>Connected</TriggerLabel>
                 <ControlPageLabel>Connected</ControlPageLabel>
             </State>
-           <State id="noAckState">
+            <State id="discovered">
+                <ValueType>Boolean</ValueType>
+                <TriggerLabel>Discovered</TriggerLabel>
+                <ControlPageLabel>Discovered</ControlPageLabel>
+            </State>
+            <State id="noAckState">
                 <ValueType>Boolean</ValueType>
                 <TriggerLabel>'no ack' State</TriggerLabel>
                 <ControlPageLabel>'no ack' State</ControlPageLabel>
             </State>
 
-           <State id="ipAddress">
+            <State id="ipAddress">
                 <ValueType>String</ValueType>
                 <TriggerLabel>IP address</TriggerLabel>
                 <ControlPageLabel>IP Address</ControlPageLabel>
             </State>
 
-           <State id="port">
+            <State id="port">
                 <ValueType>String</ValueType>
                 <TriggerLabel>Port</TriggerLabel>
                 <ControlPageLabel>Port</ControlPageLabel>
             </State>
 
             <!-- LIFX native values -->
-           <State id="hsbkHue">
+            <State id="hsbkHue">
             	<ValueType>Number</ValueType>
             	<TriggerLabel>Hue [HSBK]</TriggerLabel>
             	<ControlPageLabel>Hue [HSBK]</ControlPageLabel>
             </State>
-           <State id="hsbkSaturation">
+            <State id="hsbkSaturation">
                 <ValueType>Number</ValueType>
                 <TriggerLabel>Saturation [HSBK]</TriggerLabel>
                 <ControlPageLabel>Saturation [HSBK]</ControlPageLabel>
             </State>
-           <State id="hsbkBrightness">
+            <State id="hsbkBrightness">
                 <ValueType>Number</ValueType>
                 <TriggerLabel>Brightness [HSBK]</TriggerLabel>
                 <ControlPageLabel>Brightness [HSBK]</ControlPageLabel>

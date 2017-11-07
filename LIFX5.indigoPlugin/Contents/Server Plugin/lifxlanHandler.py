@@ -111,7 +111,7 @@ class ThreadLifxlanHandler(threading.Thread):
 
                         lifxDev = indigo.devices[lifxCommandDevId]
 
-                    self.lifxlanHandlerDebugLogger.debug(u"Dequeued lifxlanHandler Command '%s' to process with priority: %s" % (lifxCommand, lifxQueuePriority))
+                    self.lifxlanHandlerDebugLogger.debug(u"Dequeued lifxlanHandler Command '%s' to process with priority: %s" % (CMD_TRANSLATION[lifxCommand], lifxQueuePriority))
 
                     if lifxCommand == CMD_DISCOVERY:
                         # Discover LIFX Lamps on demand
@@ -130,35 +130,38 @@ class ThreadLifxlanHandler(threading.Thread):
                         discoveryUi = '\n'  # Start with a line break
                         discoveredCount = 0
                         undiscoveredCount = 0
+                        discoveryFailedCount = 0
                         for lifxDevice in self.lifxDevices:
+
                             if lifxDevice.mac_addr not in self.lifxDiscoveredDevicesMapping:
                                 self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr] = dict()
+
                             self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['lifxlanDeviceIndex'] = self.lifxDevices.index(lifxDevice)
                             self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['discovered'] = True
                             self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['ipAddress'] = lifxDevice.ip_addr
                             self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['port'] = lifxDevice.port
+
                             if 'lifxDevId' in self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr] and self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['lifxDevId'] != 0:
                                 self.globals['lifx'][self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['lifxDevId']]['lifxlanDeviceIndex'] = self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['lifxlanDeviceIndex']
                             else:
                                 self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['lifxDevId'] = 0  # Indigo Device Id (not yet known)
 
-                            lifxDeviceRefreshed = False
                             try:
+                                lifxDeviceRefreshed = False
                                 lifxDevId = self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['lifxDevId']
-                                if lifxDevId == 0 or lifxDevId not in self.globals['lifx'] or not self.globals['lifx'][lifxDevId]['connected']: 
+                                if lifxDevId == 0 or lifxDevId not in self.globals['lifx'] or not self.globals['lifx'][lifxDevId]['discovered']: 
                                     # indigo.server.log(u"REFRESHING '%s'" % lifxDevice.ip_addr)
                                     lifxDevice.req_with_resp(GetService, StateService)
                                     lifxDevice.refresh()
                                     lifxDeviceRefreshed = True
                                 # else:
                                     # indigo.server.log(u"SKIPPING REFRESH FOR '%s'" % lifxDevice.ip_addr)
-                            except WorkflowException:
-                                pass
+                            except:
+                                self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['discovered'] = False
 
                             indexUi = self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['lifxlanDeviceIndex'] + 1
-                            if lifxDeviceRefreshed:
+                            if self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['discovered'] and lifxDeviceRefreshed:
                                 discoveredCount += 1
-
                                 discoveryUi += u"LIFX Device {}: '{}' [{}] discovered at address {} on port {}.\n".format(indexUi, lifxDevice.label, lifxDevice.mac_addr, lifxDevice.ip_addr, lifxDevice.port)
 
                                 lifxDeviceMatchedtoIndigoDevice = False
@@ -171,27 +174,42 @@ class ThreadLifxlanHandler(threading.Thread):
                                                 
                                 if not lifxDeviceMatchedtoIndigoDevice:
                                     lifxDeviceLabel = str(lifxDevice.label).rstrip()
-                                    newDev = (indigo.device.create(protocol=indigo.kProtocol.Plugin,
-                                              address=lifxDevice.mac_addr,
-                                              name=lifxDeviceLabel,
-                                              description='LIFX Device',
-                                              pluginId="com.autologplugin.indigoplugin.lifxcontroller",
-                                              deviceTypeId="lifxDevice",
-                                              props={"onBrightensToLast": True,
-                                                     "SupportsColor": True,
-                                                     "SupportsRGB": True,
-                                                     "SupportsWhite": True,
-                                                     "SupportsTwoWhiteLevels": False,
-                                                     "SupportsWhiteTemperature": True,
-                                                     "WhiteTemperatureMin": 2500,
-                                                     "WhiteTemperatureMax": 9000},
-                                              folder=self.globals['folders']['DevicesId']))
+                                    dev = (indigo.device.create(protocol=indigo.kProtocol.Plugin,
+                                           address=lifxDevice.mac_addr,
+                                           name=lifxDeviceLabel,
+                                           description='LIFX Device',
+                                           pluginId="com.autologplugin.indigoplugin.lifxcontroller",
+                                           deviceTypeId="lifxDevice",
+                                           props={"onBrightensToLast": True,
+                                                  "SupportsColor": True,
+                                                  "SupportsRGB": True,
+                                                  "SupportsWhite": True,
+                                                  "SupportsTwoWhiteLevels": False,
+                                                  "SupportsWhiteTemperature": True,
+                                                  "WhiteTemperatureMin": 2500,
+                                                  "WhiteTemperatureMax": 9000},
+                                           folder=self.globals['folders']['DevicesId']))
+
+                            elif not self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['discovered']:
+                                if 'lifxDevId' in self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr] and self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['lifxDevId'] != 0:
+                                    lifxDev = indigo.devices[self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['lifxDevId']]
+                                    if lifxDev.enabled:
+                                        discoveryFailedCount += 1
+                                        self.lifxlanHandlerMonitorLogger.error(u"Discovery failed to complete for known LIFX Device '{}' [{}]".format(lifxDev.name, lifxDevice.mac_addr))
+                                        discoveryUi += u"LIFX Device {}: '{}' [{}] at address {} on port {} - DISCOVERY DID NOT COMPLETE.\n".format(indexUi, lifxDevice.label, lifxDevice.mac_addr, lifxDevice.ip_addr, lifxDevice.port)
+                                else:
+                                    lifxName = 'Unknown Name' if lifxDevice.label is None else lifxDevice.label
+                                    self.lifxlanHandlerMonitorLogger.error(u"Discovery failed to complete for LIFX Device '{}' [{}]".format(lifxName, lifxDevice.mac_addr))
+                                    
                             else:
                                 discoveredCount += 1
                                 lifxDev = indigo.devices[lifxDevId] 
                                 discoveryUi += u"LIFX Device {}: '{}' [{}] already discovered at address {} on port {}.\n".format(indexUi, lifxDev.name, lifxDev.address, lifxDev.states['ipAddress'], lifxDev.states['port'])
 
-                        # Now check if any known and enabled devices still to be discovered and therfore further discovery required
+                            if self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['lifxDevId'] != 0:
+                                indigo.devices[self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['lifxDevId']].updateStateOnServer("discovered", self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['discovered'])
+
+                        # Now check if any known and enabled devices still to be discovered and therefore further discovery required
                         furtherDiscoveryRequired = False
                         for dev in indigo.devices.iter("self"):
                             if dev.enabled:
@@ -201,11 +219,11 @@ class ThreadLifxlanHandler(threading.Thread):
                                         lifxDeviceDiscovered = True
                                 if not lifxDeviceDiscovered:
                                     indexUi += 1
-                                    discoveryUi += u"LIFX Device {}: '{}' [{}] is not yet visible on the network therefore a further discovery is required.\n".format(indexUi, dev.name, dev.address)
+                                    discoveryUi += u"LIFX Device {}: '{}' [{}] is not yet visible on the network and therefore a further discovery is required.\n".format(indexUi, dev.name, dev.address)
                                     undiscoveredCount += 1
                                     furtherDiscoveryRequired = True
 
-                        if furtherDiscoveryRequired:
+                        if furtherDiscoveryRequired or discoveryFailedCount > 0:
                             self.globals['discovery']['timer'] = threading.Timer(float(self.globals['discovery']['minutes'] * 60), self.handleTimerDiscovery)
                             self.globals['discovery']['timer'].start()
                             discoveryUi += u"\nAs one or more LIFX devices are still awaiting discovery, another discovery has been scheduled for {} minutes time.\nDisable undiscovered device(s) if further discoveries are not required.".format(self.globals['discovery']['minutes'])
@@ -214,7 +232,9 @@ class ThreadLifxlanHandler(threading.Thread):
 
                         if discoveredCount == 0:
                             discoveredCount = 'zero'
-                        discoveryMessage = u"\n\nLIFX device discovery has completed and {} LIFX device(s) have been discovered.\n".format(discoveredCount)
+                        discoveryMessage = u"\n\nLIFX device discovery has completed and {} LIFX device(s) have been successfully discovered.\n".format(discoveredCount)
+                        if discoveryFailedCount > 0:
+                            discoveryMessage += u"The number of LIFX devices that failed to complete discovery is {}.\n".format(discoveryFailedCount)
                         if undiscoveredCount > 0:
                             discoveryMessage += u"The number of previously known LIFX devices awaiting discovery is {}.\n".format(undiscoveredCount)
                         discoveryMessage += u"{}\n".format(discoveryUi)
@@ -224,6 +244,12 @@ class ThreadLifxlanHandler(threading.Thread):
                         continue
 
                     if lifxCommand == CMD_STATUS:
+                        if not lifxDev.states['discovered']:
+                            if not lifxDev.states['noAckState']:
+                                self.globals['lifx'][lifxCommandDevId]['connected'] = False
+                                lifxDev.updateStateOnServer(key='connected', value=self.globals['lifx'][lifxCommandDevId]['connected'])
+                                lifxDev.setErrorStateOnServer(u"no ack")
+                            continue
                         ioStatus, power, hsbk = self.getColor(lifxCommandDevId, self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']])
                         if ioStatus:
                             wasConnected = self.globals['lifx'][lifxCommandDevId]['connected']  
@@ -345,7 +371,7 @@ class ThreadLifxlanHandler(threading.Thread):
                                 timerInterval = lifxCommandParameters[2]
 
                                 newBrightness = lifxDev.brightness + amountToBrightenBy
-                                if int(lifxDev.states['powerLevel']) == 0 or int(lifxDev.states['indigoBrightness']) < 100 :
+                                if int(lifxDev.states['powerLevel']) == 0 or int(lifxDev.states['indigoBrightness']) < 100:
                                     self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND_HIGH, CMD_BRIGHTEN, lifxCommandDevId, [newBrightness]])
                                     lifxDev.updateStateOnServer("brightnessLevel", newBrightness)
                                     self.globals['deviceTimers'][lifxCommandDevId]['BRIGHTEN_BY_TIMER'] = threading.Timer(timerInterval, self.handleTimerRepeatingQueuedBrightenByTimerCommand, [[lifxCommandDevId, option, amountToBrightenBy, timerInterval]])
@@ -1161,7 +1187,6 @@ class ThreadLifxlanHandler(threading.Thread):
             lifxDev = indigo.devices[lifxCommandDevId]
             lifxDev.updateStateOnServer(key='connected', value=self.globals['lifx'][lifxCommandDevId]['connected'])
             lifxDev.setErrorStateOnServer(u"no ack")
-            name = self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']].label
             mac = self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']].mac_addr
             ip = self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']].ip_addr
 

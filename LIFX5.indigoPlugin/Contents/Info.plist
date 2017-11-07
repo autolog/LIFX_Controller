@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>PluginVersion</key>
-	<string>5.0.3</string>
+	<string>5.0.4</string>
 	<key>ServerApiVersion</key>
 	<string>2.0</string>
 	<key>IwsApiVersion</key>
@@ -23,5 +23,12 @@
 			<string>http://forums.indigodomo.com/viewforum.php?f=141</string>
 		</dict>
 	</array>
+    <key>GithubInfo</key>
+    <dict>
+        <key>GithubRepo</key>
+        <string>LIFX_Controller</string>
+        <key>GithubUser</key>
+        <string>autolog</string>
+    </dict>
 </dict>
 </plist>

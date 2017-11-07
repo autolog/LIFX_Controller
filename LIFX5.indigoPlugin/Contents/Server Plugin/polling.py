@@ -15,6 +15,7 @@ import time
 
 from constants import *
 
+
 class ThreadPolling(threading.Thread):
 
     def __init__(self, pluginGlobals, event):
@@ -36,9 +37,9 @@ class ThreadPolling(threading.Thread):
 
         self.pollingLogger.info(u"Initialising to poll at %i second intervals" % (self.globals['polling']['seconds']))  
         self.pollingLogger.debug(u"debugPolling = %s [%s], debugMethodTrace = %s [%s]" % (self.globals['debug']['debugPolling'], 
-            type(self.globals['debug']['debugPolling']), 
-            self.globals['debug']['debugMethodTrace'], 
-            type(self.globals['debug']['debugMethodTrace'])))  
+                                                                                          type(self.globals['debug']['debugPolling']),
+                                                                                          self.globals['debug']['debugMethodTrace'],
+                                                                                          type(self.globals['debug']['debugMethodTrace'])))
 
     def run(self):
         try:  
@@ -58,7 +59,7 @@ class ThreadPolling(threading.Thread):
                 if self.globals['debug']['previousDebugPolling'] != self.globals['debug']['debugPolling']:
                     self.globals['debug']['previousDebugPolling'] = self.globals['debug']['debugPolling']
                     self.pollingLogger.setLevel(self.globals['debug']['debugPolling'])
-                if self.globals['debug']['previousDebugMethodTrace'] !=self.globals['debug']['debugMethodTrace']:
+                if self.globals['debug']['previousDebugMethodTrace'] != self.globals['debug']['debugMethodTrace']:
                     self.globals['debug']['previousDebugMethodTrace'] = self.globals['debug']['debugMethodTrace']
                     self.pollingLogger.setLevel(self.globals['debug']['debugMethodTrace'])
 
@@ -78,8 +79,7 @@ class ThreadPolling(threading.Thread):
 
                     for dev in indigo.devices.iter("self"):
                         if dev.enabled:
-                            lifxDevId = dev.id
-                            self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_STATUS_MEDIUM, CMD_STATUS, lifxDevId, None])
+                            self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_STATUS_MEDIUM, CMD_STATUS, dev.id, None])
                                  
 
             self.pollingLogger.debug(u"Polling thread ending: pollStop.isSet={}, forceThreadEnd={}, newSeconds={}, previousSeconds={} ".format(self.pollStop.isSet(), self.globals['polling']['forceThreadEnd'], self.globals['polling']['seconds'], self.previousPollingSeconds))
