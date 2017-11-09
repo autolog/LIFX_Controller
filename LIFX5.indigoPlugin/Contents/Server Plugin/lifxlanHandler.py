@@ -189,6 +189,20 @@ class ThreadLifxlanHandler(threading.Thread):
                                                   "WhiteTemperatureMin": 2500,
                                                   "WhiteTemperatureMax": 9000},
                                            folder=self.globals['folders']['DevicesId']))
+                                    
+                                    self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['lifxDevId'] = dev.id  # Indigo Device Id
+
+                                    # Start of code block copied from deviceStartComm method in plugin.py
+                                    self.globals['lifx'][dev.id] = {}
+                                    self.globals['lifx'][dev.id]['discovered'] = True
+                                    self.globals['lifx'][dev.id]['connected'] = False
+                                    self.globals['lifx'][dev.id]['mac_addr'] = dev.address  # eg. 'd0:73:d5:0a:bc:de'
+                                    self.globals['lifx'][dev.id]['ipAddress'] = dev.states['ipAddress']
+                                    self.globals['lifx'][dev.id]['port'] = dev.states['port']
+                                    self.globals['lifx'][dev.id]['lifxlanDeviceIndex'] = self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['lifxlanDeviceIndex']
+                                    self.globals['lifx'][dev.id]['ignoreNoAck'] = bool(dev.pluginProps.get('ignoreNoAck', False))
+                                    self.globals['lifx'][dev.id]['noAckState'] = False
+                                    # End of code block copied from deviceStartComm method in plugin.py
 
                             elif not self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['discovered']:
                                 if 'lifxDevId' in self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr] and self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['lifxDevId'] != 0:

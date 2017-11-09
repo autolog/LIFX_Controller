@@ -465,9 +465,10 @@ class Plugin(indigo.PluginBase):
                 return
 
             tempPropsCopy = dev.pluginProps
-            tempPropsCopy['WhiteTemperatureMin'] = 2500
-            tempPropsCopy['WhiteTemperatureMax'] = 9000
-            dev.replacePluginPropsOnServer(tempPropsCopy)
+            if 'WhiteTemperatureMin' not in tempPropsCopy:
+                tempPropsCopy['WhiteTemperatureMin'] = 2500
+                tempPropsCopy['WhiteTemperatureMax'] = 9000
+                dev.replacePluginPropsOnServer(tempPropsCopy)
 
             # dev.setErrorStateOnServer(u"starting")  # Default to 'starting' status
             dev.updateStateImageOnServer(indigo.kStateImageSel.TimerOn)
