@@ -14,6 +14,7 @@ product_map = {1: "Original 1000",
                32: "LIFX Z 2",
                36: "LIFX Downlight",
                37: "LIFX Downlight",
+               38: "LIFX Beam",
                43: "LIFX A19",
                44: "LIFX BR30",
                45: "LIFX+ A19",
@@ -21,7 +22,11 @@ product_map = {1: "Original 1000",
                49: "LIFX Mini",
                50: "LIFX Mini White",
                51: "LIFX Mini Day and Dusk",
-               52: "LIFX GU10"
+               52: "LIFX GU10",
+               55: "LIFX Tile",
+               59: "LIFX Mini Color",
+               60: "LIFX Mini Day and Dusk",
+               61: "LIFX Mini White"
                }
                
 # Identifies which products are lights.
@@ -29,6 +34,7 @@ product_map = {1: "Original 1000",
 # However, the protocol was written to allow addition of other kinds
 # of devices, so it's important to be able to differentiate.
 light_products = [1, 3, 10, 11, 18, 20, 22, 27, 28, 29, 30, 31, 32, 36, 37, 43, 44, 45, 46, 49, 50, 51, 52]
+light_products = [1, 3, 10, 11, 18, 20, 22, 27, 28, 29, 30, 31, 32, 36, 37, 38, 43, 44, 45, 46, 49, 50, 51, 52, 55, 59, 60, 61]
 
 features_map = {1: {"color": True,
                     "infrared": False,
@@ -75,6 +81,10 @@ features_map = {1: {"color": True,
                 37: {"color": True,
                      "infrared": False,
                      "multizone": False},
+                38: {"color": True,
+                     "temperature": True,
+                     "infrared": False,
+                     "multizone": True},
                 43: {"color": True,
                      "infrared": False,
                      "multizone": False},
@@ -97,6 +107,22 @@ features_map = {1: {"color": True,
                      "infrared": False,
                      "multizone": False},
                 52: {"color": True,
+                     "infrared": False,
+                     "multizone": False},
+                55: {"color": True,
+                     "temperature": True,
+                     "infrared": False,
+                     "multizone": False},
+                59: {"color": True,
+                     "temperature": True,
+                     "infrared": False,
+                     "multizone": False},
+                60: {"color": False,
+                     "temperature": True, #guess
+                     "infrared": False,
+                     "multizone": False},
+                61: {"color": False,
+                     "temperature": False, #guess
                      "infrared": False,
                      "multizone": False}
                 }
