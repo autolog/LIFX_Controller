@@ -18,7 +18,6 @@ import threading
 from time import localtime, strftime
 
 from constants import *
-from ghpu import GitHubPluginUpdater
 from lifxlan.lifxlan import *
 from lifxlanHandler import ThreadLifxlanHandler
 from polling import ThreadPolling
@@ -110,9 +109,6 @@ class Plugin(indigo.PluginBase):
         self.globals['constant'] = {}
         self.globals['constant']['defaultDatetime'] = datetime.strptime("2000-01-01","%Y-%m-%d")
 
-        # Initialise dictionary for update checking
-        self.globals['update'] = {}
-
         # Initialise dictionary for discovery processing
         self.globals['discovery'] = {}
 
@@ -123,25 +119,8 @@ class Plugin(indigo.PluginBase):
 
         indigo.PluginBase.__del__(self)
 
-    def updatePlugin(self):
-        self.globals['update']['updater'].update()
-
-    def checkForUpdates(self):
-        self.globals['update']['updater'].checkForUpdate()
-
-    def forceUpdate(self):
-        self.globals['update']['updater'].update(currentVersion='0.0.0')
-
-    def checkRateLimit(self):
-        limiter = self.globals['update']['updater'].getRateLimit()
-        indigo.server.log('RateLimit {limit:%d remaining:%d resetAt:%d}' % limiter)
-
     def startup(self):
         self.methodTracer.threaddebug(u"CLASS: Plugin")
-
-        # Set-up update checker
-        self.globals['update']['updater'] = GitHubPluginUpdater(self)
-        self.globals['update']['nextCheckTime'] = time()
 
         # Create LIFX folder name in variables (for presets) and devices (for lamps)
         folderName = "LIFX"
@@ -256,16 +235,6 @@ class Plugin(indigo.PluginBase):
 
             if userCancelled:
                 return
-
-            self.globals['update']['check'] = bool(valuesDict.get("updateCheck", False))
-            self.globals['update']['checkFrequency'] = valuesDict.get("checkFrequency", 'DAILY')
-
-            if self.globals['update']['check']:
-                if self.globals['update']['checkFrequency'] == 'WEEKLY':
-                    self.globals['update']['checkTimeIncrement'] = (7 * 24 * 60 * 60)  # In seconds
-                else:
-                    # DAILY 
-                    self.globals['update']['checkTimeIncrement'] = (24 * 60 * 60)  # In seconds
 
             self.globals['polling']['status']          = bool(valuesDict.get("statusPolling", False))
             self.globals['polling']['seconds']         = float(valuesDict.get("pollingSeconds", float(300.0)))  # Default to 5 minutes
@@ -417,17 +386,7 @@ class Plugin(indigo.PluginBase):
         try:
             self.sleep(5)  # in seconds - Allow startup to complete
             while True:
-                if self.globals['update']['check']:
-                    if time() > self.globals['update']['nextCheckTime']:
-                        if 'checkTimeIncrement' not in self.globals['update']:
-                            self.globals['update']['checkTimeIncrement'] = (24 * 60 * 60)  # One Day In seconds
-                        self.globals['update']['nextCheckTime'] = time() + self.globals['update']['checkTimeIncrement']
-                        self.generalLogger.info(u"Autolog 'LIFX V5 Controller' checking for Plugin update")
-                        self.globals['update']['updater'].checkForUpdate()
-
-                        nextCheckTime = strftime('%A, %Y-%b-%d at %H:%M', localtime(self.globals['update']['nextCheckTime']))
-                        self.generalLogger.info(u"Autolog 'LIFX V5 Controller' next update check scheduled for: %s" % nextCheckTime)
-                self.sleep(60)  # in seconds
+                self.sleep(300)  # in seconds
 
         except self.StopThread:
             self.generalLogger.info(u"Autolog 'LIFX V5 Controller' Plugin shutdown requested")
