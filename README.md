@@ -2,5 +2,5 @@ The Autolog LIFX Controller enables you to control [LIFX][1] devices directly fr
 
 The plugin makes extensive use of the [lifxlan library][2] by Meghan Clark for which much thanks are due :)
 
-[2]: https://www.lifx.com
+[1]: https://www.lifx.com
 [2]: https://github.com/mclarkk/lifxlan
