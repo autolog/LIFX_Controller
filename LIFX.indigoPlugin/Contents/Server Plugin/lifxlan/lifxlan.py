@@ -18,6 +18,8 @@ from .tilechain import TileChain
 from .unpack import unpack_lifx_message
 from .group import Group
 
+import indigo
+
 
 class LifxLAN:
     def __init__(self, num_lights=None, verbose=False):
@@ -45,6 +47,7 @@ class LifxLAN:
     # more of an internal helper function
     # forces a refresh of the internal list of available devices
     def discover_devices(self):
+
         self.lights = []
         self.devices = []
         responses = self.broadcast_with_resp(GetService, StateService,)
@@ -59,6 +62,10 @@ class LifxLAN:
                     else:
                         device = Light(r.target_addr, r.ip_addr, r.service, r.port, self.source_id, self.verbose)
                     self.lights.append(device)
+                else:
+                    vendor, product, version = device.get_version_tuple()
+                    indigo.server.log(u'LIFXLAN [discover_devices] discovered an unknown LIFX device with product code: \'{}\'. Device\'s MAC is \'{}\' and IP Address is \'{}\'. Plugin is unable to manage this device. Please report this on the support forum.'.format(product, r.target_addr, r.ip_addr), isError=True)
+
             except WorkflowException:
                 # cheating -- it just so happens that all LIFX devices are lights right now
                 device = Light(r.target_addr, r.ip_addr, r.service, r.port, self.source_id, self.verbose)

@@ -118,6 +118,14 @@ LIFX_PRODUCTS[49] = (True,  False, False, 'LIFX Mini')
 LIFX_PRODUCTS[50] = (False, False, False, 'LIFX Mini White')
 LIFX_PRODUCTS[51] = (False, False, False, 'LIFX Mini Day and Dusk')
 LIFX_PRODUCTS[52] = (True,  False, False, 'LIFX GU10')
+LIFX_PRODUCTS[55] = (True,  False, False, 'LIFX Tile')
+LIFX_PRODUCTS[57] = (True,  False, False, 'LIFX Candle')
+LIFX_PRODUCTS[59] = (True,  False, False, 'LIFX Mini Color')
+LIFX_PRODUCTS[60] = (False, False, False, 'LIFX Mini Day and Dusk')
+LIFX_PRODUCTS[61] = (False, False, False, 'LIFX Mini White')
+LIFX_PRODUCTS[63] = (True,  False, False, 'LIFX BR30 3.6')
+LIFX_PRODUCTS[68] = (True,  False, False, 'LIFX Candle')
+
 
 LIFX_PRODUCT_SUPPORTS_COLOR = 0
 LIFX_PRODUCT_SUPPORTS_INFRARED = 1
