@@ -123,7 +123,8 @@ LIFX_PRODUCTS[57] = (True,  False, False, 'LIFX Candle')
 LIFX_PRODUCTS[59] = (True,  False, False, 'LIFX Mini Color')
 LIFX_PRODUCTS[60] = (False, False, False, 'LIFX Mini Day and Dusk')
 LIFX_PRODUCTS[61] = (False, False, False, 'LIFX Mini White')
-LIFX_PRODUCTS[63] = (True,  False, False, 'LIFX BR30 3.6')
+LIFX_PRODUCTS[62] = (True,  False, False, 'LIFX A19')
+LIFX_PRODUCTS[63] = (True,  False, False, 'LIFX BR30')
 LIFX_PRODUCTS[68] = (True,  False, False, 'LIFX Candle')
 
 
@@ -159,10 +160,6 @@ LIFX_KELVINS[7500] = ((236,236,238), '7500K Blue Daylight')
 LIFX_KELVINS[8000] = ((237,240,246), '8000K Blue Overcast')
 LIFX_KELVINS[8500] = ((236,241,249), '8500K Blue Water')
 LIFX_KELVINS[9000] = ((237,243,252), '9000K Blue Ice')
-
-
-
-
 
 
 # LIFX message type constants
