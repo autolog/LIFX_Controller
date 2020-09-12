@@ -233,14 +233,14 @@ features_map = {1: {"color": True,
                      "min_kelvin": 2500,
                      "max_kelvin": 9000},
                 60: {"color": False,
-                     "temperature": True, #guess
+                     "temperature": True,  # guess
                      "infrared": False,
                      "multizone": False,
                      "chain": False,
                      "min_kelvin": 1500,
                      "max_kelvin": 4000},
                 61: {"color": False,
-                     "temperature": False, #guess
+                     "temperature": False,  # guess
                      "infrared": False,
                      "multizone": False,
                      "chain": False,

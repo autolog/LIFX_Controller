@@ -19,7 +19,7 @@
                     <Option value="Waveform">Waveform</Option>
                 </List>
             </Field>
-            <Field id="helpMessageType" type="label" fontColor="darkgray" fontSize="mini" alignWithControl="true" alwaysUseInDialogHeightCalc="true">
+            <Field id="actionTypeHelp" type="label" fontColor="darkgray" fontSize="mini" alignWithControl="true" alwaysUseInDialogHeightCalc="true">
                 <Label>^ Select Standard or Waveform LIFX action</Label>
             </Field>
 
@@ -129,7 +129,7 @@
                 <Label>Color:</Label>
                 <CallbackMethod>colorPickerUpdated</CallbackMethod>
             </Field>
-            <Field id="kelvinWaveformColorpicker" type="colorpicker" defaultValue="" readonly="true"
+            <Field id="kelvinWaveformColorPicker" type="colorpicker" defaultValue="" readonly="true"
                 visibleBindingId="modeWaveform" visibleBindingValue="White">
                 <Label>Kelvin Tint:</Label>
                 <Description>(for information only)</Description>
@@ -187,7 +187,7 @@
                 <Label>Transient:</Label>
                 <Description>Back to original (ticked) or leave as-is</Description>
             </Field>
-            <Field id="transientWaveformHelp" type="label" fontColor="darkgray" fontSize="mini" alignWithControl="true" alwaysUseInDialogHeightCalc="true" 
+            <Field id="transientWaveformHelp" type="label" fontColor="darkgray" fontSize="mini" alignWithControl="true" alwaysUseInDialogHeightCalc="true"
                 visibleBindingId="modeWaveform" visibleBindingValue="Color, White">
                 <Label>^ Tick to return to original color or uncheck to leave color as is at end of waveform</Label>
             </Field>
@@ -196,12 +196,12 @@
                 visibleBindingId="modeWaveform" visibleBindingValue="Color, White">
                 <Label>Period:</Label>
             </Field>
-            <Field id="periodWaveformHelp" type="label" fontColor="darkgray" fontSize="mini" alignWithControl="true" alwaysUseInDialogHeightCalc="true" 
+            <Field id="periodWaveformHelp" type="label" fontColor="darkgray" fontSize="mini" alignWithControl="true" alwaysUseInDialogHeightCalc="true"
                 visibleBindingId="modeWaveform" visibleBindingValue="Color, White">
                 <Label>^ Length of one cycle in milliseconds</Label>
             </Field>
 
-            <Field id="cyclesWaveform" type="textfield" defaultValue="" alwaysUseInDialogHeightCalc="true" 
+            <Field id="cyclesWaveform" type="textfield" defaultValue="" alwaysUseInDialogHeightCalc="true"
                 visibleBindingId="modeWaveform" visibleBindingValue="Color, White">
                 <Label>Cycles:</Label>
             </Field>
@@ -244,11 +244,6 @@
 
             <Field id="separator-1" type="separator" alwaysUseInDialogHeightCalc="true"/> 
 
-
-
-
-
-
             <Field id="option" type="menu" defaultValue="SELECT_OPTION" alwaysUseInDialogHeightCalc="true">
                 <Label>Pre-Fill Options:</Label>
                 <List>
@@ -270,7 +265,7 @@
                 visibleBindingId="option" visibleBindingValue="LIFX_DEVICE">
                 <Label>Pre-fill from LIFX Device values:</Label>
             </Field>
- -->            <Field id="optionLifxDeviceList" type="menu" dynamicReload="true"
+ -->        <Field id="optionLifxDeviceList" type="menu" dynamicReload="true"
                    visibleBindingId="option" visibleBindingValue="LIFX_DEVICE">
                 <Label>LIFX Device:</Label>
                 <List class="self" filter="" method="actionConfigListLifxDevices" dynamicReload="true"/>
@@ -406,7 +401,7 @@
                    visibleBindingId="presetModeWaveform" visibleBindingValue="White, Color">
                 <Label>Brightness [W]:</Label>
             </Field>
-            <Field id="presetKelvinWaveformStatic" type="textfield" defaultValue="" readonly="true"
+            <Field id="presetkelvinWaveformStatic" type="textfield" defaultValue="" readonly="true"
                 visibleBindingId="presetModeWaveform" visibleBindingValue="White">
                 <Label>Kelvin:</Label>
             </Field>
@@ -443,7 +438,7 @@
                 </List>
             </Field>
 
-            <Field id="applyPresetStandardOptionValues1" type="button" tooltip="Click button to apply selected values to fields above" alwaysUseInDialogHeightCalc="true"
+            <Field id="applyPresetStandardOptionValues11" type="button" tooltip="Click button to apply selected values to fields above" alwaysUseInDialogHeightCalc="true"
                 visibleBindingId="presetModeStandard" visibleBindingValue="White, Color">
                 <Title>Apply Standard Preset values</Title>
                 <CallbackMethod>actionConfigApplyStandardPresetOptionValues</CallbackMethod>
@@ -457,67 +452,67 @@
             <Field id="separator-3" type="separator"/> 
 
 
-            <Field type="menu" id="selectedPresetOption" defaultValue="presetOption1"> alwaysUseInDialogHeightCalc="true"
+            <Field type="menu" id="selectedPresetOption" defaultValue="NONE"> alwaysUseInDialogHeightCalc="true"
                 <Label>Preset Options:</Label>
                 <List>
                     <Option value="NONE">No Action</Option>
-                    <Option value="presetSave">Save New Preset</Option>
-                    <Option value="presetUpdate">Update Existing Preset</Option>
+                    <Option value="preset_save">Save New Preset</Option>
+                    <Option value="preset_update">Update Existing Preset</Option>
                 </List>
                 <CallbackMethod>actionConfigPresetActionSelected</CallbackMethod>
             </Field>
-            <Field id="newPresetName" type="textfield" visibleBindingId="selectedPresetOption" visibleBindingValue="presetSave"> alwaysUseInDialogHeightCalc="true"
+            <Field id="newPresetName" type="textfield" visibleBindingId="selectedPresetOption" visibleBindingValue="preset_save"> alwaysUseInDialogHeightCalc="true"
                 <Label>Preset Name:</Label>
                 <Description>Specify name for new preset</Description>
             </Field>
-            <Field id="updatePresetList" type="menu" alwaysUseInDialogHeightCalc="true" 
-                   visibleBindingId="selectedPresetOption" visibleBindingValue="presetUpdate">
+            <Field id="updatePresetList" type="menu" alwaysUseInDialogHeightCalc="true"
+                   visibleBindingId="selectedPresetOption" visibleBindingValue="preset_update">
                 <Label>Preset to Update:</Label>
                 <List class="self" filter="" method="processPresetApplyDefineGenerator" dynamicReload="true"/>
             </Field>
 
             <Field id="savePreset" type="button" tooltip="Click button to save new preset" alwaysUseInDialogHeightCalc="true"
-                   visibleBindingId="selectedPresetOption" visibleBindingValue="presetSave">
+                   visibleBindingId="selectedPresetOption" visibleBindingValue="preset_save">
                 <Title>Save New Preset</Title>
                 <CallbackMethod>actionConfigPresetSaveButtonPressed</CallbackMethod>
             </Field>
 
             <Field id="updatePreset" type="button" tooltip="Click button to update existing preset"
-                   visibleBindingId="selectedPresetOption" visibleBindingValue="presetUpdate">
+                   visibleBindingId="selectedPresetOption" visibleBindingValue="preset_update">
                 <Title>Update Existing Preset</Title>
                 <CallbackMethod>actionConfigPresetUpdateButtonPressed</CallbackMethod>
             </Field>
 
-            <Field type="menu" id="resultPreset" defaultValue="resultNa" hidden="true"> alwaysUseInDialogHeightCalc="true"
+            <Field type="menu" id="resultPreset" defaultValue="result_na" hidden="true"> alwaysUseInDialogHeightCalc="true"
                 <Label>Preset Result:</Label>
                 <List>
-                    <Option value="resultNa">n/a</Option>
-                    <Option value="resultSaveOk">ok</Option>
-                    <Option value="resultUpdateOk">ok</Option>
-                    <Option value="resultSaveError">Save Error</Option>
-                    <Option value="resultUpdateError">Update Error</Option>
-                    <Option value="resultInvalidValue">Invalid</Option>
+                    <Option value="result_na">n/a</Option>
+                    <Option value="result_save_ok">ok</Option>
+                    <Option value="result_update_ok">ok</Option>
+                    <Option value="result_save_error">Save Error</Option>
+                    <Option value="result_update_error">Update Error</Option>
+                    <Option value="result_invalid_value">Invalid</Option>
                 </List>
             </Field>
 
             <Field id="presetResultSaveOk" type="label" fontSize="small" fontColor="green" alignWithControl="true" alwaysUseInDialogHeightCalc="true"
-                visibleBindingId="resultPreset" visibleBindingValue="resultSaveOk">
+                visibleBindingId="resultPreset" visibleBindingValue="result_save_ok">
                 <Label>SUCCESS: Preset successfully saved</Label>
             </Field>
             <Field id="presetResultUpdateOk" type="label" fontSize="small" fontColor="green" alignWithControl="true"
-                visibleBindingId="resultPreset" visibleBindingValue="resultUpdateOk">
+                visibleBindingId="resultPreset" visibleBindingValue="result_update_ok">
                 <Label>SUCCESS: Preset successfully updated</Label>
             </Field>
             <Field id="presetResultSaveError" type="label" fontSize="small" fontColor="red" alignWithControl="true"
-                visibleBindingId="resultPreset" visibleBindingValue="resultSaveError">
+                visibleBindingId="resultPreset" visibleBindingValue="result_save_error">
                 <Label>ERROR: Unable to create preset variable</Label>
             </Field>
             <Field id="presetResultUpdateError" type="label" fontSize="small" fontColor="red" alignWithControl="true"
-                visibleBindingId="resultPreset" visibleBindingValue="resultUpdateError">
+                visibleBindingId="resultPreset" visibleBindingValue="result_update_error">
                 <Label>ERROR: Unable to update preset variable</Label>
             </Field>
             <Field id="resultInvalidValue" type="label" fontSize="small" fontColor="red" alignWithControl="true"
-                visibleBindingId="resultPreset" visibleBindingValue="resultInvalidValue">
+                visibleBindingId="resultPreset" visibleBindingValue="result_invalid_value">
                 <Label>ERROR: TO BE REPLACED BY SHOWALERT</Label>
             </Field>
 

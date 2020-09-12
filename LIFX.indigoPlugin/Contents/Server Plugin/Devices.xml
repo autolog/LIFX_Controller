@@ -4,10 +4,10 @@
 <!--     <Device type="dimmer" id="lifxGroup">
         <Name>LIFX Group</Name>
         <ConfigUI>
-            <Field id="lifxDevicesList" type="list"  default="_newlifxname|_NewLifxName|0" readonly="YES" rows="5" alwaysUseInDialogHeightCalc="true">
+            <Field id="devices_lifx_devices_list" type="list"  default="_newlifxname|_NewLifxName|0" readonly="YES" rows="5" alwaysUseInDialogHeightCalc="true">
                 <Label>Select LIFX Devices:</Label>
-                <List class="self" method="lifxDevicesList" dynamicReload="true"/>
-                <CallbackMethod>lifxDevicesListSelection</CallbackMethod>
+                <List class="self" method="devices_lifx_devices_list" dynamicReload="true"/>
+                <CallbackMethod>devices_lifx_devices_listSelection</CallbackMethod>
             </Field>
             <Field id="updateAlexaNamesListLabel" type="label" fontColor="darkgray" alwaysUseInDialogHeightCalc="true" alignWithControl="true">
                 <Label>^ Select the LIFX devices you wish to be part of the group.</Label>
@@ -20,7 +20,59 @@
 		<Name>LIFX Device</Name>
 
         <ConfigUI>
-            <Field id="turnOnIfOff" type="checkbox" default="true">
+            <Field id="lifx_device_list" type="menu" defaultValue="SELECT_AVAILABLE" alwaysUseInDialogHeightCalc="true">
+                <Label>LIFX Device:</Label>
+                <List class="self" filter="" method="build_available_lifx_devices_list" dynamicReload="true"/>
+                <CallbackMethod>lifx_available_device_selected</CallbackMethod>
+            </Field>
+
+            <Field id="lifx_device_available" type="checkbox" default="true" readonly="true" hidden="true">
+                <Label>LIFX Device Available ?:</Label>
+            </Field>
+
+            <Field id="help-2A" type="label" alignWithControl="true"
+                visibleBindingId="lifx_device_available" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true">
+                <Label>^ Select LIFX device to assign to this Indigo device.</Label>
+            </Field>
+
+            <Field id="help-2B" type="label" alignWithControl="true"
+                visibleBindingId="lifx_device_available" visibleBindingValue="false" alwaysUseInDialogHeightCalc="true">
+                <Label>^ No LIFX devices available to assign to this Indigo device. Have you run discovery and has it completed?</Label>
+            </Field>
+
+            <Field id="separator-1" type="separator" alwaysUseInDialogHeightCalc="true"/>
+
+           <Field id="lifx_label" type="textfield" defaultValue="" dynamicReload="true" alwaysUseInDialogHeightCalc="true">
+                <Label>LIFX Label:</Label>
+            </Field>
+            <Field id="set_name_from_lifx_label" type="checkbox" default="true">
+                <Label>Use LIFX Label:</Label>
+                <Description>Set Indigo device name from LIFX label.</Description>
+            </Field>
+             <Field id="mac_address" type="textfield" defaultValue="" dynamicReload="true" alwaysUseInDialogHeightCalc="true">
+                <Label>MAC Address:</Label>
+            </Field>
+             <Field id="ip_address" type="textfield" defaultValue="" dynamicReload="true" alwaysUseInDialogHeightCalc="true">
+                <Label>IP Address:</Label>
+            </Field>
+            <Field id="ip_address_help" type="label" fontColor="darkgray" fontSize="mini" alignWithControl="true" alwaysUseInDialogHeightCalc="true">
+                <Label>^ The IP address of the LIFX device.</Label>
+            </Field>
+
+            <Field id="update_ip_address" type="button" tooltip="Click button" alwaysUseInDialogHeightCalc="true">
+                <Label>Update IP Address:</Label>
+                <Title>Update</Title>
+                <CallbackMethod>update_ip_address</CallbackMethod>
+            </Field>
+
+            <Field id="update_ip_address_help" type="label" fontColor="darkgray" fontSize="mini" alignWithControl="true" alwaysUseInDialogHeightCalc="true">
+                <Label>^ Update the IP address if it has changed since the LIFX device was set-up.</Label>
+            </Field>
+
+
+            <Field id="separator-2" type="separator" alwaysUseInDialogHeightCalc="true"/>
+
+            <Field id="turn_on_if_off" type="checkbox" default="true">
                 <Label>Turn On if Off:</Label>
                 <Description>Turn device on if off, when altering values.</Description>
             </Field>
@@ -48,7 +100,7 @@
                 visibleBindingId="overrideDefaultPluginDurations" visibleBindingValue="true">
                 <Label>Color / White Duration:</Label>
             </Field>
-            <Field type="checkbox" id="ignoreNoAck" defaultValue="false" tooltip="Tick to ignore a 'no ack' and set LIFX device to 'off'">
+            <Field type="checkbox" id="ignore_no_ack" defaultValue="false" tooltip="Tick to ignore a 'no ack' and set LIFX device to 'off'">
                 <Label>No Ack:</Label>
                 <Description>Enable to ignore 'no ack' and set device to State 'off' instead.</Description>
             </Field>
@@ -66,13 +118,15 @@
                 <TriggerLabel>Discovered</TriggerLabel>
                 <ControlPageLabel>Discovered</ControlPageLabel>
             </State>
-            <State id="noAckState">
+<!--
+            <State id="no_ack_state">
                 <ValueType>Boolean</ValueType>
                 <TriggerLabel>'no ack' State</TriggerLabel>
                 <ControlPageLabel>'no ack' State</ControlPageLabel>
             </State>
+-->
 
-            <State id="ipAddress">
+            <State id="ip_address">
                 <ValueType>String</ValueType>
                 <TriggerLabel>IP address</TriggerLabel>
                 <ControlPageLabel>IP Address</ControlPageLabel>
@@ -85,105 +139,105 @@
             </State>
 
             <!-- LIFX native values -->
-            <State id="hsbkHue">
+            <State id="hsbk_hue">
             	<ValueType>Number</ValueType>
             	<TriggerLabel>Hue [HSBK]</TriggerLabel>
             	<ControlPageLabel>Hue [HSBK]</ControlPageLabel>
             </State>
-            <State id="hsbkSaturation">
+            <State id="hsbk_saturation">
                 <ValueType>Number</ValueType>
                 <TriggerLabel>Saturation [HSBK]</TriggerLabel>
                 <ControlPageLabel>Saturation [HSBK]</ControlPageLabel>
             </State>
-            <State id="hsbkBrightness">
+            <State id="hsbk_brightness">
                 <ValueType>Number</ValueType>
                 <TriggerLabel>Brightness [HSBK]</TriggerLabel>
                 <ControlPageLabel>Brightness [HSBK]</ControlPageLabel>
             </State>
-            <State id="hsbkKelvin">
+            <State id="hsbk_kelvin">
                 <ValueType>Number</ValueType>
                 <TriggerLabel>Kelvin [HSBK]</TriggerLabel>
                 <ControlPageLabel>Kelvin [HSBK]</ControlPageLabel>
             </State>
-            <State id="powerLevel">
+            <State id="power_level">
                 <ValueType>Number</ValueType>
                 <TriggerLabel>Power Level</TriggerLabel>
                 <ControlPageLabel>Power Level</ControlPageLabel>
             </State>
 
-            <State id="infraredBrightness">
+            <State id="infrared_brightness">
                 <ValueType>Number</ValueType>
                 <TriggerLabel>Infrared Brightness</TriggerLabel>
                 <ControlPageLabel>Infrared Brightness</ControlPageLabel>
             </State>
 
             <!-- LIFX native values when last on -->
-            <State id="whenLastOnHsbkHue">
+            <State id="when_last_on_hsbk_hue">
                 <ValueType>Number</ValueType>
                 <TriggerLabel>Hue [When Last On - HSBK]</TriggerLabel>
                 <ControlPageLabel>Hue [When Last On - HSBK]</ControlPageLabel>
             </State>
-            <State id="whenLastOnHsbkSaturation">
+            <State id="when_last_on_hsbk_saturation">
                 <ValueType>Number</ValueType>
                 <TriggerLabel>Saturation [When Last On - HSBK]</TriggerLabel>
                 <ControlPageLabel>Saturation [When Last On - HSBK]</ControlPageLabel>
             </State>
-            <State id="whenLastOnHsbkBrightness">
+            <State id="when_last_on_hsbk_brightness">
                 <ValueType>Number</ValueType>
                 <TriggerLabel>Brightness [When Last On - HSBK]</TriggerLabel>
                 <ControlPageLabel>Brightness [When Last On - HSBK]</ControlPageLabel>
             </State>
-            <State id="whenLastOnHsbkKelvin">
+            <State id="when_last_on_hsbk_kelvin">
                 <ValueType>Number</ValueType>
                 <TriggerLabel>Kelvin [When Last On - HSBK]</TriggerLabel>
                 <ControlPageLabel>Kelvin [When Last On - HSBK]</ControlPageLabel>
             </State>
-            <State id="whenLastOnPowerLevel">
+            <State id="when_last_on_power_level">
                 <ValueType>Number</ValueType>
                 <TriggerLabel>Power Level [When Last On]</TriggerLabel>
                 <ControlPageLabel>Power Level [When Last On]</ControlPageLabel>
             </State>
 
             <!-- LIFX Device on/off states -->
-            <State id="lifxOnState">
+            <State id="lifx_on_state">
                 <ValueType>Boolean</ValueType>
                 <TriggerLabel>LIFX On State</TriggerLabel>
                 <ControlPageLabel>LIFX On State</ControlPageLabel>
             </State>
-            <State id="lifxOnOffState">
+            <State id="lifx_on_off_state">
                 <ValueType>String</ValueType>
                 <TriggerLabel>LIFX On/Off State</TriggerLabel>
                 <ControlPageLabel>LIFX On/Off State</ControlPageLabel>
             </State>
 
             <!-- LIFX Indigo values -->
-            <State id="indigoHue">
+            <State id="indigo_hue">
                 <ValueType>Number</ValueType>
                 <TriggerLabel>Hue [360]</TriggerLabel>
                 <ControlPageLabel>Hue [360]</ControlPageLabel>
             </State>
-            <State id="indigoSaturation">
+            <State id="indigo_saturation">
                 <ValueType>Number</ValueType>
                 <TriggerLabel>Saturation [100]</TriggerLabel>
                 <ControlPageLabel>Saturation [100]</ControlPageLabel>
             </State>
-            <State id="indigoBrightness">
+            <State id="indigo_brightness">
                 <ValueType>Number</ValueType>
                 <TriggerLabel>Brightness [100]</TriggerLabel>
                 <ControlPageLabel>Brightness [100]</ControlPageLabel>
             </State>
-            <State id="indigoKelvin">
+            <State id="indigo_kelvin">
                 <ValueType>Number</ValueType>
                 <TriggerLabel>Kelvin [100]</TriggerLabel>
                 <ControlPageLabel>Kelvin [100]</ControlPageLabel>
             </State>
-            <State id="indigoPowerLevel">
+            <State id="indigo_power_level">
                 <ValueType>Number</ValueType>
                 <TriggerLabel>Power Level [100]</TriggerLabel>
                 <ControlPageLabel>Power Level [100]</ControlPageLabel>
             </State>
 
-            <State id="indigoInfraredBrightness">
+            <State id="indigo_infrared_brightness">
                 <ValueType>Number</ValueType>
                 <TriggerLabel>Infrared Brightness [100]</TriggerLabel>
                 <ControlPageLabel>Infrared Brightness [100]</ControlPageLabel>
@@ -195,51 +249,51 @@
                 <TriggerLabel>Duration</TriggerLabel>
                 <ControlPageLabel>Duration</ControlPageLabel>
             </State>
-            <State id="durationDimBrighten">
+            <State id="duration_dim_brighten">
                 <ValueType>Number</ValueType>
                 <TriggerLabel>Dim / Brighten Duration</TriggerLabel>
                 <ControlPageLabel>Dim / Brighten Duration</ControlPageLabel>
             </State>
-           <State id="durationOn">
+           <State id="duration_on">
                 <ValueType>Number</ValueType>
                 <TriggerLabel>Turn On Duration</TriggerLabel>
                 <ControlPageLabel>Turn On Duration</ControlPageLabel>
             </State>
-           <State id="durationOff">
+           <State id="duration_off">
                 <ValueType>Number</ValueType>
                 <TriggerLabel>Turn Off Duration</TriggerLabel>
                 <ControlPageLabel>Turn Off Duration</ControlPageLabel>
             </State>
-           <State id="durationColorWhite">
+           <State id="duration_color_white">
                 <ValueType>Number</ValueType>
                 <TriggerLabel>Set Color/White Duration</TriggerLabel>
                 <ControlPageLabel>Set Color/White Duration</ControlPageLabel>
             </State>
 
             <!-- LIFX Devices miscellaneous values -->
-            <State id="wifiSignal">
+            <State id="wifi_signal">
                 <ValueType>String</ValueType>
                 <TriggerLabel>Wi-Fi Signal</TriggerLabel>
                 <ControlPageLabel>Wi-Fi Signal</ControlPageLabel>
             </State>
-            <State id="wifiTx">
+            <State id="wifi_tx">
                 <ValueType>String</ValueType>
                 <TriggerLabel>Wi-Fi Tx</TriggerLabel>
                 <ControlPageLabel>Wi-Fi Tx</ControlPageLabel>
             </State>
-            <State id="wifiRx">
+            <State id="wifi_rx">
                 <ValueType>String</ValueType>
                 <TriggerLabel>Wi-Fi Rx</TriggerLabel>
                 <ControlPageLabel>Wi-Fi Rx</ControlPageLabel>
             </State>
 
-            <State id="groupLabel">
+            <State id="group_label">
                 <ValueType>String</ValueType>
                 <TriggerLabel>Group Label</TriggerLabel>
                 <ControlPageLabel>Group Label</ControlPageLabel>
             </State>
 
-            <State id="locationLabel">
+            <State id="location_label">
                 <ValueType>String</ValueType>
                 <TriggerLabel>Location Label</TriggerLabel>
                 <ControlPageLabel>Location Label</ControlPageLabel>

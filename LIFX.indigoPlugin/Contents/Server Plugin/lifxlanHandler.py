@@ -1,30 +1,64 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# LIFX V4 Controller - Send & Receive Messages © Autolog 2016
+# LIFX V6 Controller - Send & Receive Messages © Autolog 2020
 #
 
+# TODO: TBA
+# -
+# -
+
+
+# noinspection PyUnresolvedReferences
+# ============================== Native Imports ===============================
 import colorsys
-try:
-    import indigo
-except:
-    pass
 import locale
 import logging
 import Queue
-import struct
 import sys
 import threading
 import traceback
 
+# ============================== Custom Imports ===============================
+try:
+    import indigo
+except ImportError:
+    pass
+
+# ============================== Plugin Imports ===============================
 from constants import *
 from lifxlan.lifxlan import *
+
+# ============================== Static Methods ===============================
+def calculate_brightness_level_from_sv(arg_saturation, arg_brightness):
+    # arguments Saturation and Brightness are (float) values 0.0 to 100.0
+    saturation = arg_saturation
+    if saturation == 0.0:
+        saturation = 1.0
+    brightness_level = (arg_brightness / 2.0) + ((100 - saturation) / 2)
+
+    return float(brightness_level)
+
+
+def set_hsbk(hue, saturation, brightness, kelvin):
+    # This method ensures that the HSBK values being passed to lifxlan are valid
+    hue = hue if hue > 0 else 0
+    hue = hue if hue <= 65535 else 65535
+    saturation = saturation if saturation > 0 else 0
+    saturation = saturation if saturation <= 65535 else 65535
+    brightness = brightness if brightness > 0 else 0
+    brightness = brightness if brightness <= 65535 else 65535
+    kelvin = kelvin if kelvin > 2500 else 2500
+    kelvin = kelvin if kelvin <= 9000 else 9000
+
+    return hue, saturation, brightness, kelvin
 
 
 # noinspection PyUnresolvedReferences,PyPep8Naming
 class ThreadLifxlanHandler(threading.Thread):
 
-    # This class manages the interface to the lifxlan library and controls the sending of commands to lifx devices and handles their responses.
+    # This class manages the interface to the lifxlan library
+    #   and controls the sending of commands to lifx devices and handles their responses.
 
     def __init__(self, pluginGlobals, event):
 
@@ -32,1413 +66,1529 @@ class ThreadLifxlanHandler(threading.Thread):
 
         self.globals = pluginGlobals
 
-        self.lifxlanHandlerMonitorLogger = logging.getLogger("Plugin.MonitorLifxlanHandler")
-        self.lifxlanHandlerMonitorLogger.setLevel(self.globals['debug']['monitorLifxlanHandler'])
+        self.lh_logger = logging.getLogger("Plugin.LIFX_HANDLER")
+        self.lh_logger.debug(u"Debugging LIFX Handler Thread")
 
-        self.lifxlanHandlerDebugLogger = logging.getLogger("Plugin.DebugLifxlanHandler")
-        self.lifxlanHandlerDebugLogger.setLevel(self.globals['debug']['debugLifxlanHandler'])
+        self.lifx_discovered_devices_mapping = dict()
 
-        self.methodTracer = logging.getLogger("Plugin.method")  
-        self.methodTracer.setLevel(self.globals['debug']['debugMethodTrace'])
-
-        self.lifxlanHandlerMonitorLogger.info(u"Initialising LIFXLAN Handler Thread")
-        self.lifxlanHandlerDebugLogger.debug(u"Debugging LIFXLAN Handler Thread")
-
-        self.threadStop = event
+        self.thread_stop = event
 
         self.lifxlan = None
 
     def run(self):
-        self.methodTracer.threaddebug(u"ThreadLifxlanHandlerMessages")
- 
         try:
             # Initialise the LIFX Lamps on startup
-            self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_INIT_DISCOVERY, CMD_DISCOVERY, None, None])
+            # self.globals[K_QUEUES][K_LIFXLAN_HANDLER][K_QUEUE].put([QUEUE_PRIORITY_INIT_DISCOVERY, CMD_DISCOVERY, None, None])
 
-            self.lifxlanHandlerDebugLogger.debug(u"LIFXLAN Handler Thread initialised")
+            self.lh_logger.debug(u"LIFXLAN Handler Thread initialised")
 
-            while not self.threadStop.is_set():
+            while not self.thread_stop.is_set():
                 try:
-                    lifxQueuedEntry = self.globals['queues']['lifxlanHandler'].get(True, 5)
+                    lifx_queued_entry = self.globals[K_QUEUES][K_LIFXLAN_HANDLER][K_QUEUE].get(True, 5)
 
-                    # lifxQueuedEntry format:
+                    # lifx_queued_entry format:
                     #   - Priority
                     #   - Command
                     #   - Device
                     #   - Data
 
-                    lifxQueuePriority, lifxCommand, lifxCommandDevId, lifxCommandParameters = lifxQueuedEntry
+                    lifx_queue_priority, lifx_command, dev_id, lifx_command_arguments = lifx_queued_entry
 
-                    if lifxCommand == CMD_STOPTHREAD:
+                    # Debug info to log
+                    if dev_id is not None:
+                        debug_dev_info = u"for device '{0}' ".format(indigo.devices[dev_id].name)
+                    else:
+                        debug_dev_info = ""
+                    self.lh_logger.debug(u"Dequeued lifxlanHandler Command '{0}' {1} to process with priority: {2}"
+                                         .format(CMD_TRANSLATION[lifx_command], debug_dev_info, lifx_queue_priority))
+
+                    if lifx_command == CMD_STOP_THREAD:
                         break  # Exit While loop and quit thread
 
-                    # Check if monitoring / debug options have changed and if so set accordingly
-                    if self.globals['debug']['previousMonitorLifxlanHandler'] != self.globals['debug']['monitorLifxlanHandler']:
-                        self.globals['debug']['previousMonitorLifxlanHandler'] = self.globals['debug']['monitorLifxlanHandler']
-                        self.lifxlanHandlerMonitorLogger.setLevel(self.globals['debug']['monitorLifxlanHandler'])
-                    if self.globals['debug']['previousDebugLifxlanHandler'] != self.globals['debug']['debugLifxlanHandler']:
-                        self.globals['debug']['previousDebugLifxlanHandler'] = self.globals['debug']['debugLifxlanHandler']
-                        self.lifxlanHandlerDebugLogger.setLevel(self.globals['debug']['debugLifxlanHandler'])
-                    if self.globals['debug']['previousDebugMethodTrace'] != self.globals['debug']['debugMethodTrace']:
-                        self.globals['debug']['previousDebugMethodTrace'] = self.globals['debug']['debugMethodTrace']
-                        self.methodTracer.setLevel(self.globals['debug']['debugMethodTrace'])
+                    if dev_id is None:
+                        # Ignore command
+                        pass
+                        continue  # Loop back to process next entry off the queue
 
-                    if lifxCommandDevId is not None:
-                        if not indigo.devices[lifxCommandDevId].enabled:
-                            indigo.devices[lifxCommandDevId].updateStateOnServer(key='brightnessLevel', value=0, uiValue=u'not enabled', clearErrorState=True)
-                            # indigo.server.log(u'NOT ENABLED = %s' % indigo.devices[lifxCommandDevId].name)
-                            continue
-                        else:
-                            self.globals['lifx'][lifxCommandDevId]['previousLifxComand'] = self.globals['lifx'][lifxCommandDevId]['currentLifxComand']
-                            self.globals['lifx'][lifxCommandDevId]['currentLifxComand'] = lifxCommand
-                            if self.globals['lifx'][lifxCommandDevId]['mac_addr'] not in self.lifxDiscoveredDevicesMapping:
-                                # self.lifxlanHandlerMonitorLogger.info(u"LIFX Device: '%s' [%s] awaiting discovery" % (indigo.devices[lifxCommandDevId].name, self.globals['lifx'][lifxCommandDevId]['mac_addr']))
-                                self.globals['lifx'][lifxCommandDevId]['noAckState'] = True
-                                indigo.devices[lifxCommandDevId].updateStateOnServer(key='noAckState', value=self.globals['lifx'][lifxCommandDevId]['noAckState'], clearErrorState=True)
-                                if self.globals['lifx'][lifxCommandDevId]['ignoreNoAck']:
-                                    indigo.devices[lifxCommandDevId].updateStateImageOnServer(indigo.kStateImageSel.DimmerOff)
-                                    indigo.devices[lifxCommandDevId].updateStateOnServer(key='onOffState', value=False, clearErrorState=True)
-                                    indigo.devices[lifxCommandDevId].updateStateOnServer(key='brightnessLevel', value=0, uiValue=u'0')
-                                else:
-                                    indigo.devices[lifxCommandDevId].setErrorStateOnServer(u"no ack")  # Default to 'no ack' status
-                                continue
-                            elif self.lifxDiscoveredDevicesMapping[self.globals['lifx'][lifxCommandDevId]['mac_addr']]['lifxDevId'] == 0:  # Indigo Device Id (not yet known)
-                                self.lifxDiscoveredDevicesMapping[self.globals['lifx'][lifxCommandDevId]['mac_addr']]['lifxDevId'] = lifxCommandDevId
+                    dev = indigo.devices[dev_id]
 
-                        self.globals['lifx'][lifxCommandDevId]['ipAddress'] = self.lifxDiscoveredDevicesMapping[self.globals['lifx'][lifxCommandDevId]['mac_addr']]['ipAddress']
-                        self.globals['lifx'][lifxCommandDevId]['port'] = self.lifxDiscoveredDevicesMapping[self.globals['lifx'][lifxCommandDevId]['mac_addr']]['port']
-                        self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex'] = self.lifxDiscoveredDevicesMapping[self.globals['lifx'][lifxCommandDevId]['mac_addr']]['lifxlanDeviceIndex']
+                    if not dev.enabled:
+                        indigo.devices[dev_id].updateStateOnServer(key="brightnessLevel",
+                                                                   value=0,
+                                                                   uiValue=u'not enabled',
+                                                                   clearErrorState=True)
+                        continue  # Loop back to process next entry off the queue
 
-                        lifxDev = indigo.devices[lifxCommandDevId]
+                    if K_LIFX_COMMAND_CURRENT not in self.globals[K_LIFX][dev_id]:
+                        self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_CURRENT] = ""
+                    self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_CURRENT]
+                    self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_CURRENT] = lifx_command
 
-                    self.lifxlanHandlerDebugLogger.debug(u"Dequeued lifxlanHandler Command '%s' to process with priority: %s" % (CMD_TRANSLATION[lifxCommand], lifxQueuePriority))
+                    if K_LIFX_DEVICE not in self.globals[K_LIFX][dev_id]:
+                        self.lh_logger.debug(u"Indigo LIFX device '{0}' not yet set-up".format(dev.name))
+                        return
 
-                    if lifxCommand == CMD_DISCOVERY:
-                        # Discover LIFX Lamps on demand
-                        self.lifxlanHandlerMonitorLogger.info(u"LIFX device discovery starting (this can take up to 60 seconds) . . .")
-                        self.lifxlan = LifxLAN(None)  # Force discovery of LIFX Devices
-                        self.lifxDevices = self.lifxlan.get_lights()
+                    if self.globals[K_LIFX][dev_id][K_LIFX_DEVICE] is None:
+                        # self.globals[K_LIFX][dev_id][K_NO_ACK_STATE] = True
+                        # dev.updateStateOnServer(key="no_ack_state",
+                        #                         value=self.globals[K_LIFX][dev_id][K_NO_ACK_STATE],
+                        #                         clearErrorState=True)
+                        self.globals[K_LIFX][dev_id][K_CONNECTED] = False
+                        dev.updateStateOnServer(key="connected",
+                                                value=False,
+                                                clearErrorState=True)
+                        self.handle_no_ack_status(dev)
 
-                        self.numberOfLifxDevices = len(self.lifxDevices)
+                    dev = indigo.devices[dev_id]
 
-                        try:
-                            testExists = self.lifxDiscoveredDevicesMapping
-                        except AttributeError:
-                            self.lifxDiscoveredDevicesMapping = dict()
-
-                        indexUi = 0  # In case no devices discovered!
-                        discoveryUi = '\n'  # Start with a line break
-                        discoveredCount = 0
-                        undiscoveredCount = 0
-                        discoveryFailedCount = 0
-                        for lifxDevice in self.lifxDevices:
-
-                            if lifxDevice.mac_addr not in self.lifxDiscoveredDevicesMapping:
-                                self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr] = dict()
-
-                            self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['lifxlanDeviceIndex'] = self.lifxDevices.index(lifxDevice)
-                            self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['discovered'] = True
-                            self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['ipAddress'] = lifxDevice.ip_addr
-                            self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['port'] = lifxDevice.port
-
-                            if 'lifxDevId' in self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr] and self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['lifxDevId'] != 0:
-                                self.globals['lifx'][self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['lifxDevId']]['lifxlanDeviceIndex'] = self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['lifxlanDeviceIndex']
-                            else:
-                                self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['lifxDevId'] = 0  # Indigo Device Id (not yet known)
-
-                            try:
-                                lifxDeviceRefreshed = False
-                                lifxDevId = self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['lifxDevId']
-                                if lifxDevId == 0 or lifxDevId not in self.globals['lifx'] or not self.globals['lifx'][lifxDevId]['discovered']: 
-                                    # indigo.server.log(u"REFRESHING '%s'" % lifxDevice.ip_addr)
-                                    lifxDevice.req_with_resp(GetService, StateService)
-                                    lifxDevice.refresh()
-                                    lifxDeviceRefreshed = True
-                                # else:
-                                    # indigo.server.log(u"SKIPPING REFRESH FOR '%s'" % lifxDevice.ip_addr)
-                            except:
-                                self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['discovered'] = False
-
-                            indexUi = self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['lifxlanDeviceIndex'] + 1
-                            if self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['discovered'] and lifxDeviceRefreshed:
-                                discoveredCount += 1
-                                discoveryUi += u"LIFX Device {}: '{}' [{}] discovered at address {} on port {}.\n".format(indexUi, lifxDevice.label, lifxDevice.mac_addr, lifxDevice.ip_addr, lifxDevice.port)
-
-                                lifxDeviceMatchedtoIndigoDevice = False
-                                for dev in indigo.devices.iter("self"):
-                                    if lifxDevice.mac_addr == dev.address:
-                                        lifxDeviceMatchedtoIndigoDevice = True
-                                        if dev.enabled:
-                                            self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['lifxDevId'] = dev.id  # Indigo Device Id
-                                        break
-                                                
-                                if not lifxDeviceMatchedtoIndigoDevice:
-                                    lifxDeviceLabel = str(lifxDevice.label).rstrip()
-                                    dev = (indigo.device.create(protocol=indigo.kProtocol.Plugin,
-                                           address=lifxDevice.mac_addr,
-                                           name=lifxDeviceLabel,
-                                           description='LIFX Device',
-                                           pluginId="com.autologplugin.indigoplugin.lifxcontroller",
-                                           deviceTypeId="lifxDevice",
-                                           props={"onBrightensToLast": True,
-                                                  "SupportsColor": True,
-                                                  "SupportsRGB": True,
-                                                  "SupportsWhite": True,
-                                                  "SupportsTwoWhiteLevels": False,
-                                                  "SupportsWhiteTemperature": True,
-                                                  "WhiteTemperatureMin": 2500,
-                                                  "WhiteTemperatureMax": 9000},
-                                           folder=self.globals['folders']['DevicesId']))
-                                    
-                                    self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['lifxDevId'] = dev.id  # Indigo Device Id
-
-                                    # Start of code block copied from deviceStartComm method in plugin.py
-                                    self.globals['lifx'][dev.id] = {}
-                                    self.globals['lifx'][dev.id]['discovered'] = True
-                                    self.globals['lifx'][dev.id]['connected'] = False
-                                    self.globals['lifx'][dev.id]['mac_addr'] = dev.address  # eg. 'd0:73:d5:0a:bc:de'
-                                    self.globals['lifx'][dev.id]['ipAddress'] = dev.states['ipAddress']
-                                    self.globals['lifx'][dev.id]['port'] = dev.states['port']
-                                    self.globals['lifx'][dev.id]['lifxlanDeviceIndex'] = self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['lifxlanDeviceIndex']
-                                    self.globals['lifx'][dev.id]['ignoreNoAck'] = bool(dev.pluginProps.get('ignoreNoAck', False))
-                                    self.globals['lifx'][dev.id]['noAckState'] = False
-                                    # End of code block copied from deviceStartComm method in plugin.py
-
-                            elif not self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['discovered']:
-                                if 'lifxDevId' in self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr] and self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['lifxDevId'] != 0:
-                                    lifxDev = indigo.devices[self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['lifxDevId']]
-                                    if lifxDev.enabled:
-                                        discoveryFailedCount += 1
-                                        self.lifxlanHandlerMonitorLogger.error(u"Discovery failed to complete for known LIFX Device '{}' [{}]".format(lifxDev.name, lifxDevice.mac_addr))
-                                        discoveryUi += u"LIFX Device {}: '{}' [{}] at address {} on port {} - DISCOVERY DID NOT COMPLETE.\n".format(indexUi, lifxDevice.label, lifxDevice.mac_addr, lifxDevice.ip_addr, lifxDevice.port)
-                                else:
-                                    lifxName = 'Unknown Name' if lifxDevice.label is None else lifxDevice.label
-                                    self.lifxlanHandlerMonitorLogger.error(u"Discovery failed to complete for LIFX Device '{}' [{}]".format(lifxName, lifxDevice.mac_addr))
-                                    
-                            else:
-                                discoveredCount += 1
-                                lifxDev = indigo.devices[lifxDevId] 
-                                discoveryUi += u"LIFX Device {}: '{}' [{}] already discovered at address {} on port {}.\n".format(indexUi, lifxDev.name, lifxDev.address, lifxDev.states['ipAddress'], lifxDev.states['port'])
-
-                            if self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['lifxDevId'] != 0:
-                                indigo.devices[self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['lifxDevId']].updateStateOnServer("discovered", self.lifxDiscoveredDevicesMapping[lifxDevice.mac_addr]['discovered'])
-
-                        # Now check if any known and enabled devices still to be discovered and therefore further discovery required
-                        furtherDiscoveryRequired = False
-                        for dev in indigo.devices.iter("self"):
-                            if dev.enabled:
-                                lifxDeviceDiscovered = False
-                                for lifxDevice in self.lifxDevices:
-                                    if lifxDevice.mac_addr == dev.address:
-                                        lifxDeviceDiscovered = True
-                                if not lifxDeviceDiscovered:
-                                    indexUi += 1
-                                    discoveryUi += u"LIFX Device {}: '{}' [{}] is not yet visible on the network and therefore a further discovery is required.\n".format(indexUi, dev.name, dev.address)
-                                    undiscoveredCount += 1
-                                    furtherDiscoveryRequired = True
-
-                        if furtherDiscoveryRequired or discoveryFailedCount > 0:
-                            self.globals['discovery']['timer'] = threading.Timer(float(self.globals['discovery']['minutes'] * 60), self.handleTimerDiscovery)
-                            self.globals['discovery']['timer'].start()
-                            discoveryUi += u"\nAs one or more LIFX devices are still awaiting discovery, another discovery has been scheduled for {} minutes time.\nDisable undiscovered device(s) if further discoveries are not required.".format(self.globals['discovery']['minutes'])
-                        else:
-                            discoveryUi += u"\nAll known and enabled LIFX devices have been discovered. No further discoveries will be scheduled.\nIf a further discovery is required, reload the plugin or run the LIFX Control Action: 'Discover LIFX Devices'."
-
-                        if discoveredCount == 0:
-                            discoveredCount = 'zero'
-                        discoveryMessage = u"\n\nLIFX device discovery has completed and {} LIFX device(s) have been successfully discovered.\n".format(discoveredCount)
-                        if discoveryFailedCount > 0:
-                            discoveryMessage += u"The number of LIFX devices that failed to complete discovery is {}.\n".format(discoveryFailedCount)
-                        if undiscoveredCount > 0:
-                            discoveryMessage += u"The number of previously known LIFX devices awaiting discovery is {}.\n".format(undiscoveredCount)
-                        discoveryMessage += u"{}\n".format(discoveryUi)
-                        
-                        self.lifxlanHandlerMonitorLogger.info(discoveryMessage)
-
+                    if lifx_command == CMD_STATUS or lifx_command == CMD_POLLING_STATUS or lifx_command == CMD_RECOVERY_STATUS:
+                        self.process_status(lifx_command, dev)
                         continue
 
-                    if lifxCommand == CMD_STATUS:
-                        if not lifxDev.states['discovered']:
-                            if not lifxDev.states['noAckState']:
-                                self.globals['lifx'][lifxCommandDevId]['connected'] = False
-                                lifxDev.updateStateOnServer(key='connected', value=self.globals['lifx'][lifxCommandDevId]['connected'])
-                                lifxDev.setErrorStateOnServer(u"no ack")
-                            continue
-                        ioStatus, power, hsbk = self.getColor(lifxCommandDevId, self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']])
-                        if ioStatus:
-                            wasConnected = self.globals['lifx'][lifxCommandDevId]['connected']  
-                            self.updateStatusFromMsg(lifxCommand, lifxCommandDevId, power, hsbk)
-
-                            if not wasConnected:
-                                self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_LOW, CMD_GET_VERSION, lifxCommandDevId, None])
-                                self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_LOW, CMD_GET_HOST_FIRMWARE, lifxCommandDevId, None])
-                                self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_LOW, CMD_GET_WIFI_FIRMWARE, lifxCommandDevId, None])
-                                self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_LOW, CMD_GET_WIFI_INFO, lifxCommandDevId, None])
-
-                            props = lifxDev.pluginProps
-                            if ("SupportsInfrared" in props) and props["SupportsInfrared"]:
-                                ioStatus, infraredBrightness = self.getInfrared(lifxCommandDevId, self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']])
-                                if ioStatus:
-                                    IndigoInfraredBrightness = float((infraredBrightness * 100) / 65535)
-                                    keyValueList = [
-                                        {'key': 'infraredBrightness', 'value': infraredBrightness},
-                                        {'key': 'indigoInfraredBrightness', 'value': IndigoInfraredBrightness}]
-                                    lifxDev.updateStatesOnServer(keyValueList)
-
-                                    self.lifxlanHandlerDebugLogger.debug(u"LifxlanHandler Infrared Level for '%s' is: %s" % (lifxDev.name, IndigoInfraredBrightness))
-
-                        self.globals['lifx'][lifxCommandDevId]['previousLifxComand'] = lifxCommand
+                    if not self.globals[K_LIFX][dev_id][K_CONNECTED]:  # Ignore following commands if lamp not connected
                         continue
 
-                    if (lifxCommand == CMD_ON) or (lifxCommand == CMD_OFF) or (lifxCommand == CMD_WAVEFORM_OFF) or (lifxCommand == CMD_IMMEDIATE_ON):
+                    # At this point the device is confirmed to be connected - so now process commands
 
-                        # Stop any background timer brighten or dim operation
-                        self.globals['lifx'][lifxCommandDevId]['stopRepeatDim'] = True
-                        self.globals['lifx'][lifxCommandDevId]['stopRepeatBrighten'] = True
+                    if (lifx_command == CMD_ON) or \
+                            (lifx_command == CMD_OFF) or \
+                            (lifx_command == CMD_WAVEFORM_OFF) or \
+                            (lifx_command == CMD_IMMEDIATE_ON):
+                        self.process_on_off(lifx_command, dev)
 
-                        if self.globals['lifx'][lifxCommandDevId]['connected']:
+                    elif (lifx_command == CMD_INFRARED_ON) or \
+                            (lifx_command == CMD_INFRARED_OFF) or \
+                            (lifx_command == CMD_INFRARED_SET):
+                        self.process_infrared(lifx_command, dev, lifx_command_arguments)
 
-                            self.lifxlanHandlerDebugLogger.debug(u"Processing %s for '%s' " % (lifxCommand, indigo.devices[lifxCommandDevId].name))
+                    elif lifx_command == CMD_STOP_BRIGHTEN_DIM_BY_TIMER:
+                        self.globals[K_LIFX][dev_id][K_STOP_REPEAT_BRIGHTEN] = True
+                        self.globals[K_LIFX][dev_id][K_STOP_REPEAT_DIM] = True
+                        self.clear_brighten_by_timer_timer(dev)
+                        self.clear_dim_by_timer_timer(dev)
 
-                            lifxDev = indigo.devices[lifxCommandDevId]
+                    elif lifx_command == CMD_BRIGHTEN_BY_TIMER or lifx_command == CMD_REPEAT_BRIGHTEN_BY_TIMER:
+                        self.process_brighten_by_timer(lifx_command, dev, lifx_command_arguments)
 
-                            # Clear any outstanding timers
-                            self.clearStatusTimer(lifxDev)
+                    elif lifx_command == CMD_DIM_BY_TIMER or lifx_command == CMD_REPEAT_DIM_BY_TIMER:
+                        self.process_dim_by_timer(lifx_command, dev, lifx_command_arguments)
 
-                            if lifxCommand == CMD_ON:
-                                duration = float(self.globals['lifx'][lifxCommandDevId]['durationOn'])
-                                power = 65535
-                            elif lifxCommand == CMD_IMMEDIATE_ON:
-                                duration = 0
-                                power = 65535
-                            elif lifxCommand == CMD_OFF:
-                                duration = float(self.globals['lifx'][lifxCommandDevId]['durationOff'])
-                                power = 0
-                            else:
-                                duration = 0
-                                power = 0
-                            timerDuration = duration
-                            duration = int(duration * 1000)
-                            try:    
-                                self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']].set_power(power, duration)
-                            except:
-                                self.communicationLost(lifxCommandDevId, 'set_power')
-                                continue
+                    elif lifx_command == CMD_DIM or lifx_command == CMD_BRIGHTEN or lifx_command == CMD_BRIGHTNESS:
+                        self.process_dim_brighten_brightness(lifx_command, dev, lifx_command_arguments)
 
-                            self.globals['deviceTimers'][lifxCommandDevId]['STATUS'] = threading.Timer(1.0, self.handleTimerRepeatingQueuedStatusCommand, [lifxDev, timerDuration])
-                            self.globals['deviceTimers'][lifxCommandDevId]['STATUS'].start()
-                        
-                        self.globals['lifx'][lifxCommandDevId]['previousLifxComand'] = lifxCommand
-                        continue
+                    elif lifx_command == CMD_WHITE:
+                        self.process_white(lifx_command, dev, lifx_command_arguments)
 
-                    if (lifxCommand == CMD_INFRARED_ON) or (lifxCommand == CMD_INFRARED_OFF) or (lifxCommand == CMD_INFRARED_SET):
-                        if self.globals['lifx'][lifxCommandDevId]['connected']:
+                    elif lifx_command == CMD_COLOR:
+                        self.process_color(lifx_command, dev, lifx_command_arguments)
 
-                            self.lifxlanHandlerDebugLogger.debug(u"Processing %s for '%s' " % (lifxCommand, indigo.devices[lifxCommandDevId].name))
+                    elif lifx_command == CMD_STANDARD:
+                        self.process_standard(lifx_command, dev, lifx_command_arguments)
 
-                            lifxDev = indigo.devices[lifxCommandDevId]
+                    elif lifx_command == CMD_WAVEFORM:
+                        self.process_waveform(lifx_command, dev, lifx_command_arguments)
 
-                            # Clear any outstanding timers
-                            self.clearStatusTimer(lifxDev)
+                    elif lifx_command == CMD_SET_LABEL:
+                        self.process_set_label(lifx_command, dev)
 
-                            if lifxCommand == CMD_INFRARED_OFF:
-                                infraredBrightness = 0
-                            elif lifxCommand == CMD_INFRARED_ON:
-                                infraredBrightness = 65535
-                            elif lifxCommand == CMD_INFRARED_SET:
-                                infraredBrightness = lifxCommandParameters[0]
-                                infraredBrightness = int((infraredBrightness * 65535.0) / 100.0)
-                                if infraredBrightness > 65535:
-                                    infraredBrightness = 65535  # Just in case ;)
+                    elif lifx_command == CMD_GET_VERSION:
+                        self.process_get_version(lifx_command, dev)
 
-                            try:
-                                self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']].set_infrared(infraredBrightness)
-                                self.lifxlanHandlerDebugLogger.debug(u"Processing %s for '%s'; Infrared Brightness = %s" % (lifxCommand, indigo.devices[lifxCommandDevId].name, infraredBrightness))
-                            except:
-                                self.communicationLost(lifxCommandDevId, 'set_infrared')
-                                continue
+                    elif lifx_command == CMD_GET_HOST_FIRMWARE:
+                        self.process_get_host_firmware(lifx_command, dev)
 
-                            self.globals['deviceTimers'][lifxCommandDevId]['STATUS'] = threading.Timer(1.0, self.handleTimerRepeatingQueuedStatusCommand, [lifxDev, 2])
-                            self.globals['deviceTimers'][lifxCommandDevId]['STATUS'].start()
-                        
-                        self.globals['lifx'][lifxCommandDevId]['previousLifxComand'] = lifxCommand
-                        continue
+                    elif lifx_command == CMD_GET_PORT:
+                        self.process_get_port(lifx_command, dev)
 
-                    if lifxCommand == CMD_STOP_BRIGHTEN_DIM_BY_TIMER:
-                        self.globals['lifx'][lifxCommandDevId]['stopRepeatBrighten'] = True
-                        self.globals['lifx'][lifxCommandDevId]['stopRepeatDim'] = True
-                        self.clearBrightenByTimerTimer(lifxDev)
-                        self.clearDimByTimerTimer(lifxDev)
-                        continue
+                    elif lifx_command == CMD_GET_WIFI_FIRMWARE:
+                        self.process_get_wifi_firmware(lifx_command, dev, lifx_command_arguments)
 
-                    if lifxCommand == CMD_BRIGHTEN_BY_TIMER or lifxCommand == CMD_REPEAT_BRIGHTEN_BY_TIMER:
-                        if self.globals['lifx'][lifxCommandDevId]['connected']:
-                            if lifxCommand == CMD_BRIGHTEN_BY_TIMER:
-                                # Clear any outstanding timers
-                                self.clearBrightenByTimerTimer(lifxDev)
-                                self.globals['lifx'][lifxCommandDevId]['stopRepeatBrighten'] = False
-                                self.globals['lifx'][lifxCommandDevId]['stopRepeatDim'] = True
+                    elif lifx_command == CMD_GET_WIFI_INFO:
+                        self.process_get_wifi_info(lifx_command, dev)
 
-                            if not self.globals['lifx'][lifxCommandDevId]['stopRepeatBrighten']:
-                                option = lifxCommandParameters[0]
-                                amountToBrightenBy = lifxCommandParameters[1]
-                                timerInterval = lifxCommandParameters[2]
+                    elif lifx_command == CMD_GET_HOST_INFO:
+                        self.process_get_host_info(lifx_command, dev, lifx_command_arguments)
 
-                                newBrightness = lifxDev.brightness + amountToBrightenBy
-                                if int(lifxDev.states['powerLevel']) == 0 or int(lifxDev.states['indigoBrightness']) < 100:
-                                    self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND_HIGH, CMD_BRIGHTEN, lifxCommandDevId, [newBrightness]])
-                                    lifxDev.updateStateOnServer("brightnessLevel", newBrightness)
-                                    self.globals['deviceTimers'][lifxCommandDevId]['BRIGHTEN_BY_TIMER'] = threading.Timer(timerInterval, self.handleTimerRepeatingQueuedBrightenByTimerCommand, [[lifxCommandDevId, option, amountToBrightenBy, timerInterval]])
-                                    self.globals['deviceTimers'][lifxCommandDevId]['BRIGHTEN_BY_TIMER'].start()
-                                else:
-                                    self.globals['lifx'][lifxCommandDevId]['stopRepeatBrighten'] = True
-                                    self.lifxlanHandlerMonitorLogger.info(u"\"%s\" %s" % (lifxDev.name, 'brightened to 100%'))
+                    elif lifx_command == CMD_GET_LOCATION:
+                        self.process_get_location(lifx_command, dev, lifx_command_arguments)
 
-                            continue
+                    elif lifx_command == CMD_GET_GROUP:
+                        self.process_get_group(lifx_command, dev, lifx_command_arguments)
 
-                    if lifxCommand == CMD_DIM_BY_TIMER or lifxCommand == CMD_REPEAT_DIM_BY_TIMER:
-                        if self.globals['lifx'][lifxCommandDevId]['connected']:
-                            if lifxCommand == CMD_DIM_BY_TIMER:
-                                # Clear any outstanding timers
-                                self.clearDimByTimerTimer(lifxDev)
-                                self.globals['lifx'][lifxCommandDevId]['stopRepeatDim'] = False
-                                self.globals['lifx'][lifxCommandDevId]['stopRepeatBrighten'] = True
-
-                            if not self.globals['lifx'][lifxCommandDevId]['stopRepeatDim']:
-                                option = lifxCommandParameters[0]
-                                amountToDimBy = lifxCommandParameters[1]
-                                timerInterval = lifxCommandParameters[2]
-
-                                if int(lifxDev.states['powerLevel']) > 0:
-                                    if lifxDev.brightness == 0:
-                                        newBrightness = 0
-                                    else: 
-                                        newBrightness = lifxDev.brightness - amountToDimBy
-                                else:
-                                    if int(lifxDev.states['indigoBrightness']) > 0:
-                                        newBrightness = int(lifxDev.states['indigoBrightness'])
-                                    else:
-                                        newBrightness = 0
-
-                                if newBrightness <= 0:
-                                    newBrightness = 0
-                                    lifxDev.updateStateOnServer("brightnessLevel", newBrightness)
-                                    self.globals['lifx'][lifxCommandDevId]['stopRepeatDim'] = True
-                                    self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND_HIGH, CMD_DIM, lifxCommandDevId, [newBrightness]])
-                                    self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND_HIGH, CMD_OFF, lifxCommandDevId, None])
-                                    self.lifxlanHandlerMonitorLogger.info(u"\"%s\" %s" % (lifxDev.name, 'dimmed to off'))
-                                else:
-                                    self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND_HIGH, CMD_DIM, lifxCommandDevId, [newBrightness]])
-                                    lifxDev.updateStateOnServer("brightnessLevel", newBrightness)
-                                    self.globals['deviceTimers'][lifxCommandDevId]['BRIGHTEN_DIM_BY_TIMER'] = threading.Timer(timerInterval, self.handleTimerRepeatingQueuedDimByTimerCommand, [[lifxCommandDevId, option, amountToDimBy, timerInterval]])
-                                    self.globals['deviceTimers'][lifxCommandDevId]['BRIGHTEN_DIM_BY_TIMER'].start()
-
-                            continue
-
-                    if lifxCommand == CMD_DIM or lifxCommand == CMD_BRIGHTEN or lifxCommand == CMD_BRIGHTNESS:
-                        if self.globals['lifx'][lifxCommandDevId]['connected']:
-                            newBrightness = lifxCommandParameters[0]
-                            newBrightness = int((newBrightness * 65535.0) / 100.0)
-
-                            lifxDev = indigo.devices[lifxCommandDevId]
-
-                            # Clear any outstanding timers
-                            self.clearStatusTimer(lifxDev)
-
-                            hue = self.globals['lifx'][lifxCommandDevId]['hsbkHue']         # Value between 0 and 65535
-                            saturation = self.globals['lifx'][lifxCommandDevId]['hsbkSaturation']  # Value between 0 and 65535 (e.g. 20% = 13107)
-                            kelvin = self.globals['lifx'][lifxCommandDevId]['hsbkKelvin']      # Value between 2500 and 9000
-                            powerLevel = self.globals['lifx'][lifxCommandDevId]['powerLevel']      # Value between 0 and 65535 
-
-                            if (lifxCommand == CMD_BRIGHTEN or lifxCommand == CMD_DIM) and powerLevel == 0:
-                                # Need to turn on LIFX device as currently off
-                                powerLevel = 65535
-                                try:
-                                    self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']].set_power(powerLevel, 0)
-                                except:
-                                    self.communicationLost(lifxCommandDevId, 'set_power')
-                                    continue
-                            elif lifxCommand == CMD_BRIGHTNESS and newBrightness > 0 and powerLevel == 0:
-                                # Need to reset existing brightness to 0 before turning on
-                                try:
-                                    hsbkWithBrightnessZero = self.setHSBK(hue, saturation, 0, kelvin)
-                                    self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']].set_color(hsbkWithBrightnessZero, 0)
-                                except:
-                                    self.communicationLost(lifxCommandDevId, 'set_color')
-                                    continue
-                                # Need to turn on LIFX device as currently off
-                                powerLevel = 65535
-                                try:
-                                    self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']].set_power(powerLevel, 0)
-                                except:
-                                    self.communicationLost(lifxCommandDevId, 'set_power')
-                                    continue
-
-                            if lifxCommand == CMD_BRIGHTNESS:
-                                self.globals['lifx'][lifxCommandDevId]['stopRepeatBrighten'] = True
-                                self.globals['lifx'][lifxCommandDevId]['stopRepeatDim'] = True
-                                duration = int(self.globals['lifx'][lifxCommandDevId]['durationDimBrighten'] * 1000)
-                            else:
-                                duration = 0
-
-                            if saturation > 0:  # check if white or colour (colour if saturation > 0)
-                                # colour
-                                if newBrightness > 32768:
-                                    saturation = int(65535 - ((newBrightness - 32768) * 1.98))
-                                    brightness = 65535
-                                else:
-                                    saturation = 65535
-                                    brightness = int(newBrightness * 2.0)
-                            else:
-                                # White
-                                brightness = int(newBrightness)
-
-                            self.lifxlanHandlerDebugLogger.debug(u'LIFX COMMAND [BRIGHTNESS]; SET-COLOR for %s: Hue=%s, Saturation=%s, Brightness=%s, Kelvin=%s' % (indigo.devices[lifxCommandDevId].name,  hue, saturation, brightness, kelvin))   
-
-                            try:
-                                hsbk = self.setHSBK(hue, saturation, brightness, kelvin)
-                                self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']].set_color(hsbk, duration, True)
-                                self.updateStatusFromMsg(lifxCommand, lifxCommandDevId, powerLevel, hsbk)
-
-                            except:
-                                self.communicationLost(lifxCommandDevId, 'set_color')
-                                continue
-
-                        self.globals['lifx'][lifxCommandDevId]['previousLifxComand'] = lifxCommand
-                        continue
-
-                    if lifxCommand == CMD_WHITE:
-                        # Stop any background timer brighten or dim operation
-                        self.globals['lifx'][lifxCommandDevId]['stopRepeatDim'] = True
-                        self.globals['lifx'][lifxCommandDevId]['stopRepeatBrighten'] = True
-
-                        targetWhiteLevel, targetWhiteTemperature = lifxCommandParameters
-
-                        if self.globals['lifx'][lifxCommandDevId]['connected']:
-                            lifxDev = indigo.devices[lifxCommandDevId]
-
-                            # Clear any outstanding timers
-                            self.clearStatusTimer(lifxDev)
-
-                            ioStatus, power, hsbk = self.getColor(lifxCommandDevId, self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']])
-
-                            self.lifxlanHandlerDebugLogger.debug(u"LIFX COMMAND [WHITE] IOSTATUS for %s =  %s, HSBK = %s" % (indigo.devices[lifxCommandDevId].name, ioStatus, hsbk))
-                            if ioStatus:
-                                hue = hsbk[0]
-                                saturation = hsbk[1]
-                                brightness = hsbk[2]
-                                kelvin = hsbk[3]
-
-                                self.lifxlanHandlerDebugLogger.debug(u'LIFX COMMAND [WHITE]; GET-COLOR for %s: Hue=%s, Saturation=%s, Brightness=%s, Kelvin=%s' % (indigo.devices[lifxCommandDevId].name,  hue, saturation, brightness, kelvin))   
-
-                                if power == 0 and self.globals['lifx'][lifxCommandDevId]['turnOnIfOff']:
-                                    # Need to reset existing brightness to 0 before turning on
-                                    try:
-                                        hsbkWithBrightnessZero = self.setHSBK(hue, saturation, 0, kelvin)
-                                        self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']].set_color(hsbkWithBrightnessZero, 0)
-                                    except:
-                                        self.communicationLost(lifxCommandDevId, 'set_color')
-                                        continue
-                                    # Need to turn on LIFX device as currently off
-                                    power = 65535
-                                    try:
-                                        self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']].set_power(power, 0)
-                                    except:
-                                        self.communicationLost(lifxCommandDevId, 'set_power')
-                                        continue
-                                        
-                                saturation = 0
-                                brightness = int((targetWhiteLevel * 65535.0) / 100.0)
-                                kelvin = int(targetWhiteTemperature)
-                                duration = int(self.globals['lifx'][lifxCommandDevId]['durationColorWhite'] * 1000)
-
-                                self.lifxlanHandlerDebugLogger.debug(u'LIFX COMMAND [WHITE]; SET-COLOR for %s: Hue=%s, Saturation=%s, Brightness=%s, Kelvin=%s' % (indigo.devices[lifxCommandDevId].name,  hue, saturation, brightness, kelvin))   
-
-                                try:
-                                    hsbk = self.setHSBK(hue, saturation, brightness, kelvin)
-                                    self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']].set_color(hsbk, duration)
-                                except:
-                                    self.communicationLost(lifxCommandDevId, 'set_color')
-                                    continue
-
-                                timerDuration = int(self.globals['lifx'][lifxCommandDevId]['durationColorWhite'])
-                                self.globals['deviceTimers'][lifxCommandDevId]['STATUS'] = threading.Timer(1.0, self.handleTimerRepeatingQueuedStatusCommand, [lifxDev, timerDuration])
-
-                                self.globals['deviceTimers'][lifxCommandDevId]['STATUS'].start()
-
-                        self.globals['lifx'][lifxCommandDevId]['previousLifxComand'] = lifxCommand
-                        continue
-
-                    if lifxCommand == CMD_COLOR:
-                        # Stop any background timer brighten or dim operation
-                        self.globals['lifx'][lifxCommandDevId]['stopRepeatDim'] = True
-                        self.globals['lifx'][lifxCommandDevId]['stopRepeatBrighten'] = True
-
-                        targetHue, targetSaturation, targetBrightness = lifxCommandParameters
-
-                        if self.globals['lifx'][lifxCommandDevId]['connected']:
-                            lifxDev = indigo.devices[lifxCommandDevId]
- 
-                            # Clear any outstanding timers
-                            self.clearStatusTimer(lifxDev)
-
-                            ioStatus, power, hsbk = self.getColor(lifxCommandDevId, self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']])
-                            self.lifxlanHandlerDebugLogger.debug(u"LIFX COMMAND [COLOR] IOSTATUS for %s =  %s, HSBK = %s" % (indigo.devices[lifxCommandDevId].name, ioStatus, hsbk))
-                            if ioStatus:
-                                hue = hsbk[0]
-                                saturation = hsbk[1]
-                                brightness = hsbk[2]
-                                kelvin = hsbk[3]
-
-                                self.lifxlanHandlerDebugLogger.debug(u'LIFX COMMAND [COLOR]; GET-COLOR for %s: Hue=%s, Saturation=%s, Brightness=%s, Kelvin=%s' % (indigo.devices[lifxCommandDevId].name,  hue, saturation, brightness, kelvin))   
-
-                                if power == 0 and self.globals['lifx'][lifxCommandDevId]['turnOnIfOff']:
-                                    # Need to reset existing brightness to 0 before turning on
-                                    try:
-                                        hsbkWithBrightnessZero = self.setHSBK(hue, saturation, 0, kelvin)
-                                        self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']].set_color(hsbkWithBrightnessZero, 0)
-                                    except:
-                                        self.communicationLost(lifxCommandDevId, 'set_color')
-                                        continue
-                                    # Need to turn on LIFX device as currently off
-                                    power = 65535
-                                    try:
-                                        self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']].set_power(power, 0)
-                                    except:
-                                        self.communicationLost(lifxCommandDevId, 'set_power')
-                                        continue
-
-                                hue = targetHue
-                                saturation = targetSaturation
-                                brightness = targetBrightness
-                                duration = int(self.globals['lifx'][lifxCommandDevId]['durationColorWhite'] * 1000)
-
-                                self.lifxlanHandlerDebugLogger.debug(u'LIFX COMMAND [COLOR]; SET-COLOR for %s: Hue=%s, Saturation=%s, Brightness=%s, Kelvin=%s, Duration=%s' % (indigo.devices[lifxCommandDevId].name,  hue, saturation, brightness, kelvin, duration))   
-
-                                try:
-                                    hsbk = self.setHSBK(hue, saturation, brightness, kelvin)
-                                    self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']].set_color(hsbk, duration)
-                                except:
-                                    self.communicationLost(lifxCommandDevId, 'set_color')
-                                    continue
-
-                                timerDuration = int(self.globals['lifx'][lifxCommandDevId]['durationColorWhite'])
-                                self.globals['deviceTimers'][lifxCommandDevId]['STATUS'] = threading.Timer(1.0, self.handleTimerRepeatingQueuedStatusCommand, [lifxDev, timerDuration])
-
-                                self.globals['deviceTimers'][lifxCommandDevId]['STATUS'].start()
-
-                        self.globals['lifx'][lifxCommandDevId]['previousLifxComand'] = lifxCommand
-                        continue
-
-                    if lifxCommand == CMD_STANDARD:
-                        # Stop any background timer brighten or dim operation
-                        self.globals['lifx'][lifxCommandDevId]['stopRepeatDim'] = True
-                        self.globals['lifx'][lifxCommandDevId]['stopRepeatBrighten'] = True
-
-                        turnOnIfOff, targetMode, targetHue, targetSaturation, targetBrightness, targetKelvin, targetDuration = lifxCommandParameters
-
-                        if self.globals['lifx'][lifxCommandDevId]['connected']:
-                            lifxDev = indigo.devices[lifxCommandDevId]
-
-                            self.lifxlanHandlerDebugLogger.debug(u'LIFX COMMAND [STANDARD]; Target for %s: TOIF=%s, Mode=%s, Hue=%s, Saturation=%s, Brightness=%s, Kelvin=%s, Duration=%s' % (indigo.devices[lifxCommandDevId].name,  turnOnIfOff, targetMode, targetHue, targetSaturation, targetBrightness, targetKelvin, targetDuration))   
- 
-                            # Clear any outstanding timers
-                            self.clearStatusTimer(lifxDev)
-
-                            ioStatus, power, hsbk = self.getColor(lifxCommandDevId, self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']])
-                            self.lifxlanHandlerDebugLogger.debug(u"LIFX COMMAND [COLOR] IOSTATUS for %s =  %s, HSBK = %s" % (indigo.devices[lifxCommandDevId].name, ioStatus, hsbk))
-                            if ioStatus:
-                                hue = hsbk[0]
-                                saturation = hsbk[1]
-                                brightness = hsbk[2]
-                                kelvin = hsbk[3]
-
-                                self.lifxlanHandlerDebugLogger.debug(u'LIFX COMMAND [COLOR]; GET-COLOR for %s: Hue=%s, Saturation=%s, Brightness=%s, Kelvin=%s' % (indigo.devices[lifxCommandDevId].name,  hue, saturation, brightness, kelvin))   
-
-                                if targetMode == 'White':
-                                    saturation = 0  # Force WHITE mode
-                                    if targetKelvin != '-':
-                                        kelvin = int(targetKelvin)
-                                else:
-                                    # Assume 'Color'
-                                    if targetHue != '-':
-                                        hue = int((float(targetHue) * 65535.0) / 360.0)
-                                    if targetSaturation != '-':
-                                        saturation = int((float(targetSaturation) * 65535.0) / 100.0)
-                                if targetBrightness != '-':
-                                    brightness = int((float(targetBrightness) * 65535.0) / 100.0)
-
-                                if targetDuration != '-':
-                                    duration = int(float(targetDuration) * 1000)
-                                else:
-                                    duration = int(self.globals['lifx'][lifxCommandDevId]['durationColorWhite'] * 1000)
-
-                                self.lifxlanHandlerDebugLogger.debug(u'LIFX COMMAND [STANDARD][%s]; SET-COLOR for %s: Hue=%s, Saturation=%s, Brightness=%s, Kelvin=%s, duration=%s' % (targetMode, indigo.devices[lifxCommandDevId].name,  hue, saturation, brightness, kelvin, duration))   
-
-                                if power == 0 and turnOnIfOff:
-                                    try:
-                                        hsbk = self.setHSBK(hue, saturation, brightness, kelvin)
-                                        self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']].set_color(hsbk, 0)
-                                    except:
-                                        self.communicationLost(lifxCommandDevId, 'set_color')
-                                        continue
-                                    power = 65535
-                                    try:
-                                        self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']].set_power(power, duration)
-                                    except:
-                                        self.communicationLost(lifxCommandDevId, 'set_power')
-                                        continue
-                                else:
-                                    if power == 0:
-                                        duration = 0  # As power is off. might as well do apply command straight away
-                                    try:
-                                        hsbk = self.setHSBK(hue, saturation, brightness, kelvin)
-                                        self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']].set_color(hsbk, duration)
-                                    except:
-                                        self.communicationLost(lifxCommandDevId, 'set_color')
-                                        continue
-
-                                timerDuration = int(duration/1000)  # Convert back from milliseconds
-                                self.globals['deviceTimers'][lifxCommandDevId]['STATUS'] = threading.Timer(1.0, self.handleTimerRepeatingQueuedStatusCommand, [lifxDev, timerDuration])
-
-                                self.globals['deviceTimers'][lifxCommandDevId]['STATUS'].start()
-
-                        self.globals['lifx'][lifxCommandDevId]['previousLifxComand'] = lifxCommand
-                        continue
-
-                    if lifxCommand == CMD_WAVEFORM:
-                        # Stop any background timer brighten or dim operation
-                        self.globals['lifx'][lifxCommandDevId]['stopRepeatDim'] = True
-                        self.globals['lifx'][lifxCommandDevId]['stopRepeatBrighten'] = True
-
-                        targetMode, targetHue, targetSaturation, targetBrightness, targetKelvin, targetTransient, targetPeriod, targetCycles, targetDuty_cycle, targetWaveform = lifxCommandParameters
-
-                        if self.globals['lifx'][lifxCommandDevId]['connected']:
-                            lifxDev = indigo.devices[lifxCommandDevId]
-
-                            # Clear any outstanding timers
-                            self.clearStatusTimer(lifxDev)
-                            self.clearWaveformOffTimer(lifxDev)
-
-                            ioStatus, power, hsbk = self.getColor(lifxCommandDevId, self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']])
-                            self.lifxlanHandlerDebugLogger.debug(u"LIFX COMMAND [COLOR] IOSTATUS for %s =  %s, HSBK = %s" % (indigo.devices[lifxCommandDevId].name, ioStatus, hsbk))
-                            if ioStatus:
-                                hue = hsbk[0]
-                                saturation = hsbk[1]
-                                brightness = hsbk[2]
-                                kelvin = hsbk[3]
-
-                                self.lifxlanHandlerDebugLogger.debug(u'LIFX COMMAND [COLOR]; GET-COLOR for %s: Hue=%s, Saturation=%s, Brightness=%s, Kelvin=%s' % (indigo.devices[lifxCommandDevId].name,  hue, saturation, brightness, kelvin))   
-
-                                lifxDeviceAlreadyOn = True
-                                if power == 0:
-                                    lifxDeviceAlreadyOn = False
-                                    duration = 0
-                                    power = 65535
-                                    duration = int(duration * 1000)    
-                                    try:
-                                        self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']].set_power(power, duration)
-                                    except:
-                                        self.communicationLost(lifxCommandDevId, 'set_power')
-                                        continue
-
-                                if targetMode == 'White':
-                                    saturation = 0  # Force WHITE mode
-                                    if targetKelvin != '-':
-                                        kelvin = int(kelvin)
-                                else:
-                                    # Assume 'COLOR'
-                                    if targetHue != '-':
-                                        hue = int((float(targetHue) * 65535.0) / 360.0)
-                                    if targetSaturation != '-':
-                                        saturation = int((float(targetSaturation) * 65535.0) / 100.0)
-                                if targetBrightness != '-':
-                                    brightness = int((float(targetBrightness) * 65535.0) / 100.0)
-                                hsbk = self.setHSBK(hue, saturation, brightness, kelvin)
-
-                                if targetTransient:
-                                    transient = int(1)
-                                else:
-                                    transient = int(0)
-                                period = int(targetPeriod)
-                                cycles = float(targetCycles)
-                                duty_cycle = int(targetDuty_cycle)
-                                waveform = int(targetWaveform)
-
-                                self.lifxlanHandlerDebugLogger.debug(u'LIFX COMMAND [WAVEFORM]; SET-WAVEFORM for %s: Hue=%s, Saturation=%s, Brightness=%s, Kelvin=%s' % (indigo.devices[lifxCommandDevId].name,  hue, saturation, brightness, kelvin))   
-                                self.lifxlanHandlerDebugLogger.debug(u'LIFX COMMAND [WAVEFORM]; SET-WAVEFORM for %s: Transient=%s, Period=%s, Cycles=%s, Duty_cycle=%s, Waveform=%s' % (indigo.devices[lifxCommandDevId].name,  transient, period, cycles, duty_cycle, waveform))   
-
-                                try:
-                                    self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']].set_waveform(transient, hsbk, period, cycles, duty_cycle, waveform)
-                                except:
-                                    self.communicationLost(lifxCommandDevId, 'set_waveform')
-                                    continue
-
-                                if not lifxDeviceAlreadyOn:
-                                    timerSetFor = float((float(period) / 1000.0) * cycles)
-                                    self.globals['deviceTimers'][lifxCommandDevId]['WAVEFORM_OFF'] = threading.Timer(timerSetFor, self.handleTimerWaveformOffCommand, [lifxDev])
-                                    self.globals['deviceTimers'][lifxCommandDevId]['WAVEFORM_OFF'].start()
-
-                        self.globals['lifx'][lifxCommandDevId]['previousLifxComand'] = lifxCommand
-                        continue
-
-                    if lifxCommand == CMD_SET_LABEL:
-                        if self.globals['lifx'][lifxCommandDevId]['connected']:
-
-                            self.lifxlanHandlerDebugLogger.debug(u"Processing %s for '%s' " % (lifxCommand, indigo.devices[lifxCommandDevId].name))
-
-                            lifxDev = indigo.devices[lifxCommandDevId]
-
-                            # Clear any outstanding timers
-                            self.clearStatusTimer(lifxDev)
-
-                            try:
-                                self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']].set_label(lifxDev.name)
-                            except:
-                                self.communicationLost(lifxCommandDevId, 'set_label')
-
-                        self.globals['lifx'][lifxCommandDevId]['previousLifxComand'] = lifxCommand
-                        continue
-
-                    if lifxCommand == CMD_GET_VERSION:
-                        if self.globals['lifx'][lifxCommandDevId]['connected']:
-
-                            self.lifxlanHandlerDebugLogger.debug(u"Processing %s for '%s' " % (lifxCommand, indigo.devices[lifxCommandDevId].name))
-
-                            lifxDev = indigo.devices[lifxCommandDevId]
-
-                            # Clear any outstanding timers
-                            self.clearStatusTimer(lifxDev)
-
-                            try:
-                                product = self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']].get_product()
-                            except:
-                                self.communicationLost(lifxCommandDevId, 'get_product')
-                                continue
-
-                            self.lifxlanHandlerDebugLogger.debug(u"PRODUCT for '%s' = '%s'" % (indigo.devices[lifxCommandDevId].name, product))
-
-                            productFound = False
-                            try:
-                                model = str('%s' % (LIFX_PRODUCTS[product][LIFX_PRODUCT_NAME]))  # Defined in constants.py
-                                productFound = True
-                            except KeyError:
-                                model = str('LIFX Product - %s' % product)
-
-                            if lifxDev.model != model:
-                                lifxDev.model = model
-                                lifxDev.replaceOnServer()
-
-                            if productFound:
-                                props = lifxDev.pluginProps
-                                propsChanged = False
-                                if ("SupportsColor" not in props) or (props["SupportsColor"] != bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_COLOR])):
-                                    props["SupportsColor"] = True  # Applies even if just able to change White Levels / Temperature
-                                    props["SupportsRGB"] = bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_COLOR])
-                                    propsChanged = True
-                                if ("SupportsRGB" not in props) or (props["SupportsRGB"] != bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_COLOR])):
-                                    props["SupportsRGB"] = bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_COLOR])
-                                    propsChanged = True
-                                if ("SupportsInfrared" not in props) or (props["SupportsInfrared"] != bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_INFRARED])):
-                                    props["SupportsInfrared"] = bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_INFRARED])
-                                    propsChanged = True
-                                if ("SupportsMultizone" not in props) or (props["SupportsMultizone"] != bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_MULTIZONE])):
-                                    props["SupportsMultizone"] = bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_MULTIZONE])
-                                    propsChanged = True
-                                if propsChanged:
-                                    lifxDev.replacePluginPropsOnServer(props)
-
-                        self.globals['lifx'][lifxCommandDevId]['previousLifxComand'] = lifxCommand
-                        continue
-
-                    if lifxCommand == CMD_GET_HOST_FIRMWARE:
-                        if self.globals['lifx'][lifxCommandDevId]['connected']:
-
-                            self.lifxlanHandlerDebugLogger.debug(u"Processing %s for '%s' " % (lifxCommand, indigo.devices[lifxCommandDevId].name))
-
-                            lifxDev = indigo.devices[lifxCommandDevId]
-
-                            # Clear any outstanding timers
-                            self.clearStatusTimer(lifxDev)
-
-                            try:
-                                firmware_version = str(self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']].get_host_firmware_version())
-                            except:
-                                self.communicationLost(lifxCommandDevId, 'get_host_firmware_version')
-                                continue
-
-                            self.lifxlanHandlerDebugLogger.debug(u"HOST FIRMWARE VERSION for '%s': '%s'" % (indigo.devices[lifxCommandDevId].name, firmware_version))
-
-                            props = lifxDev.pluginProps
-
-                            if 'version' in props:
-                                version = str(props['version']).split('|')
-                            else:
-                                props["version"] = ''
-                                version = ['_']
-
-                            if len(version) > 1:
-                                if firmware_version == version[1]:
-                                    newVersion = firmware_version
-                                else:
-                                    newVersion = firmware_version + '|' + version[1]
-                            else:
-                                newVersion = firmware_version
-
-                            if props["version"] != newVersion:
-                                props["version"] = newVersion
-                                lifxDev.replacePluginPropsOnServer(props)
-
-                        self.globals['lifx'][lifxCommandDevId]['previousLifxComand'] = lifxCommand
-                        continue
-
-                    if lifxCommand == CMD_GET_PORT:
-                        if self.globals['lifx'][lifxCommandDevId]['connected']:
-
-                            self.lifxlanHandlerDebugLogger.debug(u"Processing %s for '%s' " % (lifxCommand, indigo.devices[lifxCommandDevId].name))
-
-                            lifxDev = indigo.devices[lifxCommandDevId]
-
-                            # Clear any outstanding timers
-                            self.clearStatusTimer(lifxDev)
-
-                            try:
-                                port = str(self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']].get_port())
-                            except:
-                                self.communicationLost(lifxCommandDevId, 'get_port')
-                                continue
-
-                            self.lifxlanHandlerDebugLogger.info(u"Port for '%s': '%s'" % (indigo.devices[lifxCommandDevId].name, port))
-
-                            # props = lifxDev.pluginProps
-
-                            # if 'version' in props:
-                            #     version = str(props['version']).split('|')
-                            # else:
-                            #     props["version"] = ''
-                            #     version = [wifi_firmware_version]
-
-                            # if len(version) > 0:
-                            #     if wifi_firmware_version == version[0]:  # i.e. Firmware and wifi versions are the same
-                            #         newVersion = wifi_firmware_version
-                            #     else:
-                            #         newVersion = str(version[0]) + '|' + wifi_firmware_version
-                            # else:
-                            #     newVersion = '_|' + wifi_firmware_version
-
-                            # if props["version"] != newVersion:
-                            #     props["version"] = newVersion
-                            #     lifxDev.replacePluginPropsOnServer(props)
-
-                        self.globals['lifx'][lifxCommandDevId]['previousLifxComand'] = lifxCommand
-                        continue
-
-                    if lifxCommand == CMD_GET_WIFI_FIRMWARE:
-                        if self.globals['lifx'][lifxCommandDevId]['connected']:
-
-                            self.lifxlanHandlerDebugLogger.debug(u"Processing %s for '%s' " % (lifxCommand, indigo.devices[lifxCommandDevId].name))
-
-                            lifxDev = indigo.devices[lifxCommandDevId]
-
-                            # Clear any outstanding timers
-                            self.clearStatusTimer(lifxDev)
-
-                            try:
-                                wifi_firmware_version = str(self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']].get_wifi_firmware_version())
-                            except:
-                                self.communicationLost(lifxCommandDevId, 'get_wifi_firmware_version')
-                                continue
-
-                            self.lifxlanHandlerDebugLogger.debug(u"WI-FI FIRMWARE VERSION for '%s': '%s'" % (indigo.devices[lifxCommandDevId].name, wifi_firmware_version))
-
-                            props = lifxDev.pluginProps
-
-                            if 'version' in props:
-                                version = str(props['version']).split('|')
-                            else:
-                                props["version"] = ''
-                                version = [wifi_firmware_version]
-
-                            if len(version) > 0:
-                                if wifi_firmware_version == version[0]:  # i.e. Firmware and wifi versions are the same
-                                    newVersion = wifi_firmware_version
-                                else:
-                                    newVersion = str(version[0]) + '|' + wifi_firmware_version
-                            else:
-                                newVersion = '_|' + wifi_firmware_version
-
-                            if props["version"] != newVersion:
-                                props["version"] = newVersion
-                                lifxDev.replacePluginPropsOnServer(props)
-
-                        self.globals['lifx'][lifxCommandDevId]['previousLifxComand'] = lifxCommand
-                        continue
-
-                    if lifxCommand == CMD_GET_WIFI_INFO:
-                        if self.globals['lifx'][lifxCommandDevId]['connected']:
-
-                            self.lifxlanHandlerDebugLogger.debug(u"Processing %s for '%s' " % (lifxCommand, indigo.devices[lifxCommandDevId].name))
-
-                            lifxDev = indigo.devices[lifxCommandDevId]
-
-                            # Clear any outstanding timers
-                            self.clearStatusTimer(lifxDev)
-
-                            try:
-                                signal, tx, rx = self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']].get_wifi_info_tuple()
-                            except:
-                                self.communicationLost(lifxCommandDevId, 'get_wifi_info_tuple')
-                                continue
-
-                            self.lifxlanHandlerDebugLogger.debug(u"WI-FI INFO [1] for '%s': Signal=%s, Tx=%s, Rx=%s" % (indigo.devices[lifxCommandDevId].name, signal, tx, rx))
-                            if signal is not None:
-                                signal = str('{:.16f}'.format(signal))[0:12]
-                            locale.setlocale(locale.LC_ALL, 'en_US')
-                            if tx is not None:
-                                tx = locale.format("%d", tx, grouping=True)
-                            if rx is not None:
-                                rx = locale.format("%d", rx, grouping=True)
-
-                            self.lifxlanHandlerDebugLogger.debug(u"WI-FI INFO [2] for '%s': Signal=%s, Tx=%s, Rx=%s" % (indigo.devices[lifxCommandDevId].name, signal, tx, rx))
-
-                            keyValueList = [
-                                {'key': 'wifiSignal', 'value': signal},
-                                {'key': 'wifiTx', 'value': tx},
-                                {'key': 'wifiRx', 'value': rx}
-                            ]
-                            lifxDev.updateStatesOnServer(keyValueList)
-
-                        self.globals['lifx'][lifxCommandDevId]['previousLifxComand'] = lifxCommand
-                        continue
-
-                    continue
-
-                    # TO BE CONTINUED !
-
-                    if lifxCommand == CMD_GET_HOST_INFO:
-                        self.lifxlanHandlerDebugLogger.debug(u"Processing %s" % lifxCommand)
-
-                        payload = ''
-                        dev = sendMessage[1]
-                        ipAddress = self.globals['lifx'][dev.id]['ipAddress']
-                        self.outputMessageToLifxDevice(ipAddress, DEV_GET_HOST_INFO, dev, payload)
-
-                        continue
-
-                    if lifxCommand == CMD_GET_LOCATION:
-                        self.lifxlanHandlerDebugLogger.debug(u"Processing %s" % lifxCommand)
-
-                        payload = ''
-                        dev = sendMessage[1]
-                        ipAddress = self.globals['lifx'][dev.id]['ipAddress']
-                        self.outputMessageToLifxDevice(ipAddress, DEV_GET_LOCATION, dev, payload)
-
-                        continue
-
-                    if lifxCommand == CMD_GET_GROUP:
-                        self.lifxlanHandlerDebugLogger.debug(u"Processing %s" % lifxCommand)
-
-                        payload = ''
-                        dev = sendMessage[1]
-                        ipAddress = self.globals['lifx'][dev.id]['ipAddress']
-                        self.outputMessageToLifxDevice(ipAddress, DEV_GET_GROUP, dev, payload)
-
-                        continue
-
-                    if lifxCommand == CMD_GET_INFO:
-                        self.lifxlanHandlerDebugLogger.debug(u"Processing %s" % lifxCommand)
-
-                        payload = ''
-                        dev = sendMessage[1]
-                        ipAddress = self.globals['lifx'][dev.id]['ipAddress']
-                        self.outputMessageToLifxDevice(ipAddress, DEV_GET_INFO, dev, payload)
-
-                        continue
+                    elif lifx_command == CMD_GET_INFO:
+                        self.process_get_info(lifx_command, dev, lifx_command_arguments)
 
                 except Queue.Empty:
                     pass
-                except StandardError, e:
-                    self.lifxlanHandlerDebugLogger.error(u"StandardError detected communicating with LIFX lamp. Line '%s' has error='%s'" % (sys.exc_traceback.tb_lineno, e))   
-                except:
-                    sysTraceback = 'No INFO' if sys.exc_info()[2] is None else sys.exc_info()[2]
-                    sysTraceBackUI = ''.join(traceback.format_tb(sysTraceback)) 
-                    self.lifxlanHandlerDebugLogger.error(u"Exception detected communicating with LIFX devices '%s' - %s" % (sys.exc_info()[1], sysTraceBackUI)) 
+                except StandardError as standard_error_message:
+                    self.lh_logger.error(u"StandardError detected communicating with LIFX lamp."
+                                         u" Line {0} has error: {1}"
+                                         .format(sys.exc_traceback.tb_lineno, standard_error_message))
 
-        except StandardError, e:
-            self.lifxlanHandlerDebugLogger.error(u"StandardError detected in LIFX Send Receive Message Thread. Line '%s' has error='%s'" % (sys.exc_traceback.tb_lineno, e))   
+        except StandardError as standard_error_message:
+            self.lh_logger.error(u"StandardError detected in LIFX Send Receive Message Thread. Line {0} has error: {1}"
+                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
 
-        self.lifxlanHandlerDebugLogger.debug(u"LIFX Send Receive Message Thread ended.")   
+        self.lh_logger.debug(u"LIFX Send Receive Message Thread ended.")
 
-    def clearBrightenByTimerTimer(self, dev):
-        self.methodTracer.threaddebug(u"CLASS: ThreadLifxlanHandlerMessages")
+    def clear_brighten_by_timer_timer(self, dev):
+        if dev.id in self.globals[K_DEVICE_TIMERS] and 'BRIGHTEN_BY_TIMER' in self.globals[K_DEVICE_TIMERS][dev.id]:
+            self.globals[K_DEVICE_TIMERS][dev.id]["BRIGHTEN_BY_TIMER"].cancel()
 
-        if dev.id in self.globals['deviceTimers'] and 'BRIGHTEN_BY_TIMER' in self.globals['deviceTimers'][dev.id]:
-            self.globals['deviceTimers'][dev.id]['BRIGHTEN_BY_TIMER'].cancel()
+    def clear_dim_by_timer_timer(self, dev):
+        if dev.id in self.globals[K_DEVICE_TIMERS] and "DIM_BY_TIMER" in self.globals[K_DEVICE_TIMERS][dev.id]:
+            self.globals[K_DEVICE_TIMERS][dev.id]["DIM_BY_TIMER"].cancel()
 
-    def handleTimerRepeatingQueuedBrightenByTimerCommand(self, parameters):
-        self.methodTracer.threaddebug(u"CLASS: ThreadLifxlanHandlerMessages")
+    def clear_status_timer(self, dev):
+        if dev.id in self.globals[K_DEVICE_TIMERS] and 'STATUS' in self.globals[K_DEVICE_TIMERS][dev.id]:
+            self.globals[K_DEVICE_TIMERS][dev.id][K_STATUS].cancel()
+
+    def clear_waveform_off_timer(self, dev):
+        if 'WAVEFORM_OFF' in self.globals[K_DEVICE_TIMERS][dev.id]:
+            self.globals[K_DEVICE_TIMERS][dev.id]["WAVEFORM_OFF"].cancel()
+
+    def communication_lost(self, dev_id, lifx_command):
+        try:
+            dev = indigo.devices[dev_id]
+            if self.globals[K_LIFX][dev_id][K_CONNECTED]:
+                self.globals[K_LIFX][dev_id][K_CONNECTED] = False
+                dev.updateStateOnServer(key="connected", value=self.globals[K_LIFX][dev_id][K_CONNECTED])
+                dev.updateStateOnServer(key="onOffState", value=False)
+                dev.updateStateOnServer(key="brightnessLevel", value=0)
+                self.lh_logger.error(u"No acknowledgement received from '{0}' when attempting a '{1}' command."
+                                     .format(dev.name, lifx_command))
+
+            if dev_id not in self.globals[K_RECOVERY]:
+                self.globals[K_RECOVERY][dev_id] = dict()
+                self.globals[K_RECOVERY][dev_id][K_ATTEMPTS] = 0
+            self.globals[K_RECOVERY][dev_id][K_ATTEMPTS] += 1
+
+            if self.globals[K_RECOVERY][dev_id][K_ATTEMPTS] >= self.globals[K_PLUGIN_CONFIG_DEFAULT][K_RECOVERY_ATTEMPTS_LIMIT]:
+                if self.globals[K_RECOVERY][dev_id][K_ATTEMPTS] == self.globals[K_PLUGIN_CONFIG_DEFAULT][K_RECOVERY_ATTEMPTS_LIMIT]:
+                    self.lh_logger.error(u"Unable to communicate with LIFX device '{0}' - Retry limit reached."
+                                         .format(indigo.devices[dev_id].name))
+                self.handle_no_ack_status(dev)
+            else:
+                if not self.globals[K_PLUGIN_CONFIG_DEFAULT][K_HIDE_RECOVERY_MESSAGES]:
+                    self.lh_logger.warning(u"Unable to communicate with LIFX device '{0}'. Retrying: Attempt {1}"
+                                           .format(indigo.devices[dev_id].name, self.globals[K_RECOVERY][dev_id][K_ATTEMPTS]))
+
+                try:
+                    if dev_id in self.globals[K_RECOVERY_TIMERS]:
+                        self.globals[K_RECOVERY_TIMERS][dev_id].cancel()
+                        del self.globals[K_RECOVERY_TIMERS][dev_id]
+                except StandardError:
+                    pass
+
+                self.globals[K_RECOVERY_TIMERS][dev_id] = threading.Timer(self.globals[K_PLUGIN_CONFIG_DEFAULT][K_RECOVERY_FREQUENCY],
+                                                                          self.handle_timer_recovery_delay, [dev_id])
+                self.globals[K_RECOVERY_TIMERS][dev_id].start()
+                dev.setErrorStateOnServer(u"recovery active [{0}]".format(self.globals[K_RECOVERY][dev_id][K_ATTEMPTS]))
+
+        except StandardError as standard_error_message:
+            self.lh_logger.error(u"'communication_lost' error detected. Line {0} has error: {1}"
+                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+
+    def communication_ok(self, dev_id, lifx_command):
+        try:
+            dev = indigo.devices[dev_id]
+            if dev_id in self.globals[K_RECOVERY]:
+                if self.globals[K_RECOVERY][dev_id][K_ATTEMPTS] >= self.globals[K_PLUGIN_CONFIG_DEFAULT][K_RECOVERY_ATTEMPTS_LIMIT]:
+                    self.lh_logger.info(u"Re-established contact with LIFX device '{0}'".format(indigo.devices[dev_id].name))
+                elif self.globals[K_RECOVERY][dev_id][K_ATTEMPTS] > 0:
+                    self.lh_logger.info(u"Re-established contact with LIFX device '{0}' after {1} recovery attempt(s)"
+                                        .format(indigo.devices[dev_id].name, self.globals[K_RECOVERY][dev_id][K_ATTEMPTS]))
+                del self.globals[K_RECOVERY][dev_id]
+                # dev.updateStateOnServer(key="no_ack_state", value=False)
+                self.globals[K_LIFX][dev_id][K_CONNECTED] = True
+                dev.updateStateOnServer(key="connected", value=True)
+
+        except StandardError as standard_error_message:
+            self.lh_logger.error(u"'communication_ok' error detected. Line {0} has error: {1}"
+                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+
+    def get_color(self, dev_id, argLifxLanLightObject):
+
+        status = False
+        hsbk = (0, 0, 0, 3500)
+        power = 0
 
         try:
-            devId = parameters[0]
-            dev = indigo.devices[devId]
-            option = parameters[1]
-            amountToBrightenDimBy = parameters[2]
-            timerInterval = parameters[3]
-
-            self.lifxlanHandlerDebugLogger.debug(u'Timer for %s [%s] invoked for repeating queued message BRIGHTEN_BY_TIMER. Stop = %s' % (dev.name, dev.address, self.globals['lifx'][devId]['stopRepeatBrighten']))
+            lifx_command = 'get_color'
 
             try:
-                del self.globals['deviceTimers'][devId]['BRIGHTEN_BY_TIMER']
-            except:
-                pass
+                hsbk = argLifxLanLightObject.get_color()
+                power = argLifxLanLightObject.power_level
+                status = True
+                self.communication_ok(dev_id, lifx_command)
+            except (StandardError, WorkflowException):
+                self.communication_lost(dev_id, lifx_command)
 
-            if not self.globals['lifx'][devId]['stopRepeatBrighten']:
-                self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND_MEDIUM, CMD_REPEAT_BRIGHTEN_BY_TIMER, dev.id, [option, amountToBrightenDimBy, timerInterval]])
+        except StandardError as standard_error_message:
+            dev = indigo.devices[dev_id]
+            self.lh_logger.error(u"Error detected in 'get_color' for LIFX device '{0}'. Line {1} has error: {2}"
+                                 .format(dev.name, sys.exc_traceback.tb_lineno, standard_error_message))
 
-        except StandardError, e:
-            self.lifxlanHandlerDebugLogger.error(u"handleTimerRepeatingQueuedBrightenByTimerCommand error detected. Line '%s' has error='%s'" % (sys.exc_traceback.tb_lineno, e))   
+        finally:
+            return status, power, hsbk
 
-    def clearDimByTimerTimer(self, dev):
-        self.methodTracer.threaddebug(u"CLASS: ThreadLifxlanHandlerMessages")
-
-        if dev.id in self.globals['deviceTimers'] and 'DIM_BY_TIMER' in self.globals['deviceTimers'][dev.id]:
-            self.globals['deviceTimers'][dev.id]['DIM_BY_TIMER'].cancel()
-
-    def handleTimerRepeatingQueuedDimByTimerCommand(self, parameters):
-        self.methodTracer.threaddebug(u"CLASS: ThreadLifxlanHandlerMessages")
-
-        try:
-            devId = parameters[0]
-            dev = indigo.devices[devId]
-            option = parameters[1]
-            amountToBrightenDimBy = parameters[2]
-            timerInterval = parameters[3]
-
-            self.lifxlanHandlerDebugLogger.debug(u'Timer for %s [%s] invoked for repeating queued message DIM_BY_TIMER. Stop = %s' % (dev.name, dev.address, self.globals['lifx'][devId]['stopRepeatDim']))
-
-            try:
-                del self.globals['deviceTimers'][devId]['DIM_BY_TIMER']
-            except:
-                pass
-
-            if not self.globals['lifx'][devId]['stopRepeatDim']:
-                self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_COMMAND_MEDIUM, CMD_REPEAT_DIM_BY_TIMER, dev.id, [option, amountToBrightenDimBy, timerInterval]])
-
-        except StandardError, e:
-            self.lifxlanHandlerDebugLogger.error(u"handleTimerRepeatingQueuedDimByTimerCommand error detected. Line '%s' has error='%s'" % (sys.exc_traceback.tb_lineno, e))   
-
-
-    def handleTimerDiscovery(self):
-        self.methodTracer.threaddebug(u"CLASS: ThreadLifxlanHandlerMessages")
-
-        try: 
-            self.lifxlanHandlerDebugLogger.debug(u'Discovery Timer invoked')
-
-            try:
-                del self.globals['discovery']['timer']
-            except:
-                pass
-
-            self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_DISCOVERY, CMD_DISCOVERY, None, None])
-
-        except StandardError, e:
-            self.lifxlanHandlerDebugLogger.error(u"handleTimerDiscovery error detected. Line '%s' has error='%s'" % (sys.exc_traceback.tb_lineno, e))   
-
-
-
-    def clearStatusTimer(self, dev):
-        self.methodTracer.threaddebug(u"CLASS: ThreadLifxlanHandlerMessages")
-
-        if dev.id in self.globals['deviceTimers'] and 'STATUS' in self.globals['deviceTimers'][dev.id]:
-            self.globals['deviceTimers'][dev.id]['STATUS'].cancel()
-
-    def handleTimerRepeatingQueuedStatusCommand(self, dev, seconds):
-        self.methodTracer.threaddebug(u"CLASS: ThreadLifxlanHandlerMessages")
-
-        try: 
-            self.lifxlanHandlerDebugLogger.debug(u'Timer for %s [%s] invoked for repeating queued message STATUS - %s seconds left' % (dev.name, dev.address, seconds))
-
-            try:
-                del self.globals['deviceTimers'][dev.id]['STATUS']
-            except:
-                pass
-
-            self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_STATUS_HIGH, CMD_STATUS, dev.id, None])
-
-            if seconds > 0:
-                seconds -= 1
-                self.globals['deviceTimers'][dev.id]['STATUS'] = threading.Timer(1.0, self.handleTimerRepeatingQueuedStatusCommand, [dev, seconds])
-                self.globals['deviceTimers'][dev.id]['STATUS'].start()
-
-        except StandardError, e:
-            self.lifxlanHandlerDebugLogger.error(u"handleTimerRepeatingQueuedStatusCommand error detected. Line '%s' has error='%s'" % (sys.exc_traceback.tb_lineno, e))   
-
-    def clearWaveformOffTimer(self, dev):
-        self.methodTracer.threaddebug(u"CLASS: ThreadLifxlanHandlerMessages")
-
-        if 'WAVEFORM_OFF' in self.globals['deviceTimers'][dev.id]:
-            self.globals['deviceTimers'][dev.id]['WAVEFORM_OFF'].cancel()
-
-    def handleTimerWaveformOffCommand(self, dev):
-        self.methodTracer.threaddebug(u"CLASS: ThreadLifxlanHandlerMessages")
-
-        try: 
-            self.lifxlanHandlerDebugLogger.debug(u'Timer for %s [%s] invoked to turn off LIFX device (Used by Waveform)' % (dev.name, dev.address))
-
-            try:
-                del self.globals['deviceTimers'][dev.id]['WAVEFORM_OFF']
-            except:
-                pass
-
-            self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_STATUS_HIGH, CMD_WAVEFORM_OFF, dev.id, None])
-
-        except StandardError, e:
-            self.lifxlanHandlerDebugLogger.error(u"handleTimerRepeatingQueuedStatusCommand error detected. Line '%s' has error='%s'" % (sys.exc_traceback.tb_lineno, e))   
-
-    def communicationLost(self, lifxCommandDevId, lifxlanCommand):
-        if self.globals['lifx'][lifxCommandDevId]['connected']:
-            self.globals['lifx'][lifxCommandDevId]['connected'] = False
-            lifxDev = indigo.devices[lifxCommandDevId]
-            lifxDev.updateStateOnServer(key='connected', value=self.globals['lifx'][lifxCommandDevId]['connected'])
-            lifxDev.setErrorStateOnServer(u"no ack")
-            mac = self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']].mac_addr
-            ip = self.lifxDevices[self.globals['lifx'][lifxCommandDevId]['lifxlanDeviceIndex']].ip_addr
-
-            self.lifxlanHandlerMonitorLogger.error(u"No acknowledgement received from '%s' when attempting a '%s' command: MAC='%s', IP='%s'" % (lifxDev.name, lifxlanCommand, mac, ip))  
-
-    def getColor(self, lifxCommandDevId, argLifxLanLightObject):
-        lifxlanCommand = 'get_color'
-        try:
-            hsbk = argLifxLanLightObject.get_color()
-            power = argLifxLanLightObject.power_level
-            status = True
-        except IOError, e:
-            self.lifxlanHandlerDebugLogger.debug(u"GET_COLOR [IOERROR ERROR] for \"%s\" = %s" % (indigo.devices[lifxCommandDevId].name, e))
-            status = False
-            hsbk = (0, 0, 0, 3500)
-            power = 0
-            self.communicationLost(lifxCommandDevId, lifxlanCommand)
-        except StandardError, e:
-            self.lifxlanHandlerDebugLogger.debug(u"GET_COLOR [STANDARD ERROR] for \"%s\" = %s" % (indigo.devices[lifxCommandDevId].name, e)) 
-            status = False
-            hsbk = (0, 0, 0, 3500)
-            power = 0
-            self.communicationLost(lifxCommandDevId, lifxlanCommand)
-        except WorkflowException, e:
-            self.lifxlanHandlerDebugLogger.debug(u"GET_COLOR [WORKFLOW EXCEPTION] for \"%s\" = %s" % (indigo.devices[lifxCommandDevId].name, e))
-            status = False
-            hsbk = (0, 0, 0, 3500)
-            power = 0
-            self.communicationLost(lifxCommandDevId, lifxlanCommand)
-        except:
-            self.lifxlanHandlerDebugLogger.debug(u"GET_COLOR [TOTAL ERROR] for \"%s\" = %s" % (indigo.devices[lifxCommandDevId].name, sys.exc_info()[0]))
-            status = False
-            hsbk = (0, 0, 0, 3500)
-            power = 0
-            self.communicationLost(lifxCommandDevId, lifxlanCommand)
-
-        return status, power, hsbk
-
-    def getInfrared(self, lifxCommandDevId, argLifxLanLightObject):
-        lifxlanCommand = 'get_infrared'
+    def get_infrared(self, dev_id, argLifxLanLightObject):
+        lifx_command = 'get_infrared'
         try:
             infraredBrightness = argLifxLanLightObject.get_infrared()
             status = True
-        except IOError, e:
-            self.lifxlanHandlerDebugLogger.debug(u"GET_INFRARED [IOERROR ERROR] for \"%s\" = %s" % (indigo.devices[lifxCommandDevId].name, e))
+            self.communication_ok(dev_id, lifx_command)
+        except (StandardError, WorkflowException, IOError) as error:
+            self.lh_logger.debug(u"'get_infrared' error detected for '{0}' = {1}".format(indigo.devices[dev_id].name, error))
             status = False
             infraredBrightness = 0
-            self.communicationLost(lifxCommandDevId, lifxlanCommand)
-        except StandardError, e:
-            self.lifxlanHandlerDebugLogger.debug(u"GET_INFRARED [STANDARD ERROR] for \"%s\" = %s" % (indigo.devices[lifxCommandDevId].name, e)) 
-            status = False
-            infraredBrightness = 0
-            self.communicationLost(lifxCommandDevId, lifxlanCommand)
-        except WorkflowException, e:
-            self.lifxlanHandlerDebugLogger.debug(u"GET_INFRARED [WORKFLOW EXCEPTION] for \"%s\" = %s" % (indigo.devices[lifxCommandDevId].name, e))
-            status = False
-            infraredBrightness = 0
-            self.communicationLost(lifxCommandDevId, lifxlanCommand)
-        except:
-            self.lifxlanHandlerDebugLogger.debug(u"GET_INFRARED [TOTAL ERROR] for \"%s\" = %s" % (indigo.devices[lifxCommandDevId].name, sys.exc_info()[0]))
-            status = False
-            infraredBrightness = 0
-            self.communicationLost(lifxCommandDevId, lifxlanCommand)
-
+            self.communication_lost(dev_id, lifx_command)
         return status, infraredBrightness
 
-    def calculateBrightnesssLevelFromSV(self, argSaturation, argBrightness):
-
-        # arguments Saturation and Brightness are (float) values 0.0 to 100.0
-        saturation = argSaturation
-        if saturation == 0.0:
-            saturation = 1.0
-        brightnessLevel = (argBrightness / 2.0) + ((100 - saturation) / 2)
-
-        return float(brightnessLevel)
-
-
-    def setHSBK(self, hue, saturation, brightness, kelvin):
-        # This method ensures that the HSBK values being passed to lifxlan are valid
-        hue = hue if hue > 0 else 0
-        hue = hue if hue <= 65535 else 65535
-        saturation = saturation if saturation > 0 else 0
-        saturation = saturation if saturation <= 65535 else 65535
-        brightness = brightness if brightness > 0 else 0
-        brightness = brightness if brightness <= 65535 else 65535
-        kelvin = kelvin if kelvin > 2500 else 2500
-        kelvin = kelvin if kelvin <= 9000 else 9000
-
-        return hue, saturation, brightness, kelvin
-
-    def updateStatusFromMsg(self, lifxCommand, lifxCommandDevId, power, hsbk):
-        self.methodTracer.threaddebug(u"ThreadHandleMessages")
-
+    def handle_no_ack_status(self, dev):
         try:
-            lifxDev = indigo.devices[lifxCommandDevId]
+            dev_id = dev.id
+            if self.globals[K_LIFX][dev_id][K_IGNORE_NO_ACK]:
+                dev.updateStateImageOnServer(indigo.kStateImageSel.PowerOff)
+                dev.updateStateOnServer(key="onOffState", value=False, clearErrorState=True)
+                dev.updateStateOnServer(key="brightnessLevel", value=0, uiValue=u"0")
+            else:
+                dev.setErrorStateOnServer(u"no ack")  # Default to 'no ack' status
+
+        except StandardError as standard_error_message:
+            self.lh_logger.error(u"StandardError detected in 'update_status_from_message'. Line {0} has error: {1}"
+                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+
+
+    def handle_timer_recovery_delay(self, parameter):
+        try:
+            dev_id = parameter
+            dev = indigo.devices[dev_id]
+
+            self.lh_logger.debug(u"Timer for {0} [{1}] invoked for recovery queued Status command"
+                                 .format(dev.name, dev.address))
+            try:
+                if dev_id in self.globals[K_RECOVERY_TIMERS]:
+                    self.globals[K_RECOVERY_TIMERS][dev_id].cancel()
+                del self.globals[K_RECOVERY_TIMERS][dev_id]
+            except StandardError:
+                pass
+
+            self.globals[K_QUEUES][K_LIFXLAN_HANDLER][K_QUEUE].put([QUEUE_PRIORITY_STATUS_HIGH, CMD_STATUS, dev_id, None])
+
+        except StandardError as standard_error_message:
+            self.lh_logger.error(u"'handle_timer_recovery_delay' error detected."
+                                 u" Line {0} has error: {1}"
+                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+
+    def handle_timer_repeating_queued_brighten_by_timer_command(self, parameters):
+        try:
+            dev_id = parameters[0]
+            dev = indigo.devices[dev_id]
+            option = parameters[1]
+            amountToBrightenDimBy = parameters[2]
+            timerInterval = parameters[3]
+
+            self.lh_logger.debug(
+                u"Timer for {0} [{1}] invoked for repeating queued message BRIGHTEN_BY_TIMER. Stop = {2}".format(
+                    dev.name, dev.address, self.globals[K_LIFX][dev_id][K_STOP_REPEAT_BRIGHTEN]))
+
+            try:
+                del self.globals[K_DEVICE_TIMERS][dev_id]["BRIGHTEN_BY_TIMER"]
+            except (KeyError, IndexError):
+                pass
+
+            if not self.globals[K_LIFX][dev_id][K_STOP_REPEAT_BRIGHTEN]:
+                self.globals[K_QUEUES][K_LIFXLAN_HANDLER][K_QUEUE].put(
+                    [QUEUE_PRIORITY_COMMAND_MEDIUM, CMD_REPEAT_BRIGHTEN_BY_TIMER, dev.id,
+                     [option, amountToBrightenDimBy, timerInterval]])
+
+        except StandardError as standard_error_message:
+            self.lh_logger.error(
+                u"'handle_timer_repeating_queued_brighten_by_timer_command' error detected. Line {0} has error: {1}".format(
+                    sys.exc_traceback.tb_lineno, standard_error_message))
+
+    def handle_timer_repeating_queued_dim_by_timer_command(self, parameters):
+        try:
+            dev_id = parameters[0]
+            dev = indigo.devices[dev_id]
+            option = parameters[1]
+            amountToBrightenDimBy = parameters[2]
+            timerInterval = parameters[3]
+
+            self.lh_logger.debug(u"Timer for {0} [{1}] invoked for repeating queued message DIM_BY_TIMER. Stop = {2}"
+                                 .format(dev.name, dev.address, self.globals[K_LIFX][dev_id][K_STOP_REPEAT_DIM]))
+
+            try:
+                del self.globals[K_DEVICE_TIMERS][dev_id]["DIM_BY_TIMER"]
+            except (KeyError, IndexError):
+                pass
+
+            if not self.globals[K_LIFX][dev_id][K_STOP_REPEAT_DIM]:
+                self.globals[K_QUEUES][K_LIFXLAN_HANDLER][K_QUEUE].put(
+                    [QUEUE_PRIORITY_COMMAND_MEDIUM,
+                     CMD_REPEAT_DIM_BY_TIMER,
+                     dev_id,
+                     [option, amountToBrightenDimBy, timerInterval]])
+
+        except StandardError as standard_error_message:
+            self.lh_logger.error(u"handle_timer_repeating_queued_dim_by_timer_command error detected."
+                                 u" Line {0} has error: {1}"
+                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+
+    def handle_timer_repeating_queued_status_command(self, dev, seconds):
+        try:
+            self.lh_logger.debug(u"Timer for {0} [{1}] invoked for repeating queued message STATUS - {2} seconds left"
+                                 .format(dev.name, dev.address, seconds))
+
+            try:
+                del self.globals[K_DEVICE_TIMERS][dev.id][K_STATUS]
+            except (KeyError, IndexError):
+                pass
+
+            self.globals[K_QUEUES][K_LIFXLAN_HANDLER][K_QUEUE].put([QUEUE_PRIORITY_STATUS_HIGH, CMD_STATUS, dev.id, None])
+
+            if seconds > 0:
+                seconds -= 1
+                self.globals[K_DEVICE_TIMERS][dev.id][K_STATUS] = \
+                    threading.Timer(1.0, self.handle_timer_repeating_queued_status_command, [dev, seconds])
+                self.globals[K_DEVICE_TIMERS][dev.id][K_STATUS].start()
+
+        except StandardError as standard_error_message:
+            self.lh_logger.error(u"handle_timer_repeating_queued_status_command error detected."
+                                 u" Line {0} has error: {1}"
+                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+
+    def handle_timer_waveform_off_command(self, dev):
+        try:
+            self.lh_logger.debug(u"Timer for {0} [{1}] invoked to turn off LIFX device (Used by Waveform)"
+                                 .format(dev.name, dev.address))
+
+            try:
+                del self.globals[K_DEVICE_TIMERS][dev.id]["WAVEFORM_OFF"]
+            except (KeyError, IndexError):
+                pass
+
+            self.globals[K_QUEUES][K_LIFXLAN_HANDLER][K_QUEUE].put([QUEUE_PRIORITY_STATUS_HIGH, CMD_WAVEFORM_OFF, dev.id, None])
+
+        except StandardError as standard_error_message:
+            self.lh_logger.error(u"'handle_timer_waveform_off_command' error detected. Line {0} has error: {1}"
+                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+
+    def process_brighten_by_timer(self, lifx_command, dev, lifx_command_arguments):
+        try:
+            dev_id = dev.id
+
+            if lifx_command == CMD_BRIGHTEN_BY_TIMER:
+                # Clear any outstanding timers
+                self.clear_brighten_by_timer_timer(dev)
+                self.globals[K_LIFX][dev_id][K_STOP_REPEAT_BRIGHTEN] = False
+                self.globals[K_LIFX][dev_id][K_STOP_REPEAT_DIM] = True
+
+            if not self.globals[K_LIFX][dev_id][K_STOP_REPEAT_BRIGHTEN]:
+                option = lifx_command_arguments[0]
+                amountToBrightenBy = lifx_command_arguments[1]
+                timerInterval = lifx_command_arguments[2]
+
+                newBrightness = dev.brightness + amountToBrightenBy
+                if int(dev.states["powerLevel"]) == 0 or int(dev.states["indigoBrightness"]) < 100:
+                    self.globals[K_QUEUES][K_LIFXLAN_HANDLER][K_QUEUE].put(
+                        [QUEUE_PRIORITY_COMMAND_HIGH, CMD_BRIGHTEN, dev_id, [newBrightness]])
+                    dev.updateStateOnServer("brightnessLevel", newBrightness)
+                    self.globals[K_DEVICE_TIMERS][dev_id]["BRIGHTEN_BY_TIMER"] = \
+                        threading.Timer(timerInterval,
+                                        self.handle_timer_repeating_queued_brighten_by_timer_command,
+                                        [[dev_id, option, amountToBrightenBy, timerInterval]])
+                    self.globals[K_DEVICE_TIMERS][dev_id]["BRIGHTEN_BY_TIMER"].start()
+                else:
+                    self.globals[K_LIFX][dev_id][K_STOP_REPEAT_BRIGHTEN] = True
+                    self.lh_logger.info(u"\"{0}\" {1}".format(dev.name, "brightened to 100%"))
+
+        except StandardError as standard_error_message:
+            self.lh_logger.error(u"StandardError detected in 'process_brighten_by_timer'. Line {0} has error: {1}"
+                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+
+    def process_color(self, lifx_command, dev, lifx_command_arguments):
+        try:
+            dev_id = dev.id
+
+            # Stop any background timer brighten or dim operation
+            self.globals[K_LIFX][dev_id][K_STOP_REPEAT_DIM] = True
+            self.globals[K_LIFX][dev_id][K_STOP_REPEAT_BRIGHTEN] = True
+
+            targetHue, targetSaturation, targetBrightness = lifx_command_arguments
+
+            # Clear any outstanding timers
+            self.clear_status_timer(dev)
+
+            lifx_io_ok, power, hsbk = self.get_color(dev_id, self.globals[K_LIFX][dev_id][K_LIFX_DEVICE])
+            self.lh_logger.debug(u"LIFX COMMAND [COLOR] lifx_io_ok for {0} =  {1}, HSBK = {2}"
+                                 .format(indigo.devices[dev_id].name, lifx_io_ok, hsbk))
+            if lifx_io_ok:
+                hue = hsbk[0]
+                saturation = hsbk[1]
+                brightness = hsbk[2]
+                kelvin = hsbk[3]
+
+                self.lh_logger.debug(u"LIFX COMMAND [COLOR]; GET-COLOR for {0}:"
+                                     u" Hue={1}, Saturation={2}, Brightness={3}, Kelvin={4}"
+                                     .format(indigo.devices[dev_id].name, hue, saturation, brightness, kelvin))
+
+                if power == 0 and self.globals[K_LIFX][dev_id]["turn_on_if_off"]:
+                    # Need to reset existing brightness to 0 before turning on
+                    try:
+                        hsbkWithBrightnessZero = set_hsbk(hue, saturation, 0, kelvin)
+                        self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_color(
+                            hsbkWithBrightnessZero, 0)
+                        self.communication_ok(dev_id, lifx_command)
+                    except (StandardError, WorkflowException, IOError) as error:
+                        self.communication_lost(dev_id, 'set_color')
+                        return
+                    # Need to turn on LIFX device as currently off
+                    power = 65535
+                    try:
+                        self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_power(power, 0)
+                        self.communication_ok(dev_id, lifx_command)
+                    except (StandardError, WorkflowException, IOError) as error:
+                        self.communication_lost(dev_id, 'set_power')
+                        return
+
+                hue = targetHue
+                saturation = targetSaturation
+                brightness = targetBrightness
+                duration = int(self.globals[K_LIFX][dev_id][K_DURATION_COLOR_WHITE] * 1000)
+
+                self.lh_logger.debug(u"LIFX COMMAND [COLOR]; SET-COLOR for {0}:"
+                                     u" Hue={1}, Saturation={2}, Brightness={3}, Kelvin={4}, Duration={5}"
+                                     .format(indigo.devices[dev_id].name, hue, saturation,
+                                             brightness, kelvin, duration))
+
+                try:
+                    hsbk = set_hsbk(hue, saturation, brightness, kelvin)
+                    self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_color(hsbk, duration)
+                    self.communication_ok(dev_id, lifx_command)
+                except (StandardError, WorkflowException, IOError) as error:
+                    self.communication_lost(dev_id, 'set_color')
+                    return
+
+                timer_duration = int(self.globals[K_LIFX][dev_id][K_DURATION_COLOR_WHITE])
+                self.globals[K_DEVICE_TIMERS][dev_id][K_STATUS] = \
+                    threading.Timer(1.0,
+                                    self.handle_timer_repeating_queued_status_command,
+                                    [dev, timer_duration])
+
+                self.globals[K_DEVICE_TIMERS][dev_id][K_STATUS].start()
+
+            self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = lifx_command
+
+        except StandardError as standard_error_message:
+            self.lh_logger.error(u"StandardError detected in 'process_color'. Line {0} has error: {1}"
+                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+
+    def process_dim_brighten_brightness(self, lifx_command, dev, lifx_command_arguments):
+        try:
+            dev_id = dev.id
+
+            newBrightness = lifx_command_arguments[0]
+            newBrightness = int((newBrightness * 65535.0) / 100.0)
+
+            # Clear any outstanding timers
+            self.clear_status_timer(dev)
+
+            hue = self.globals[K_LIFX][dev_id]["hsbkHue"]  # Value between 0 and 65535
+            saturation = self.globals[K_LIFX][dev_id][
+                "hsbkSaturation"]  # Value between 0 and 65535 (e.g. 20% = 13107)
+            kelvin = self.globals[K_LIFX][dev_id]["hsbkKelvin"]  # Value between 2500 and 9000
+            powerLevel = self.globals[K_LIFX][dev_id]["powerLevel"]  # Value between 0 and 65535
+
+            if (lifx_command == CMD_BRIGHTEN or lifx_command == CMD_DIM) and powerLevel == 0:
+                # Need to turn on LIFX device as currently off
+                powerLevel = 65535
+                try:
+                    self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_power(powerLevel, 0)
+                    self.communication_ok(dev_id, lifx_command)
+                except (StandardError, WorkflowException, IOError) as error:
+                    self.communication_lost(dev_id, "set_power")
+                    return
+            elif lifx_command == CMD_BRIGHTNESS and newBrightness > 0 and powerLevel == 0:
+                # Need to reset existing brightness to 0 before turning on
+                try:
+                    hsbkWithBrightnessZero = set_hsbk(hue, saturation, 0, kelvin)
+                    self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_color(
+                        hsbkWithBrightnessZero, 0)
+                    self.communication_ok(dev_id, lifx_command)
+                except (StandardError, WorkflowException, IOError) as error:
+                    self.communication_lost(dev_id, "set_color")
+                    return
+                # Need to turn on LIFX device as currently off
+                powerLevel = 65535
+                try:
+                    self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_power(powerLevel, 0)
+                    self.communication_ok(dev_id, lifx_command)
+                except (StandardError, WorkflowException, IOError) as error:
+                    self.communication_lost(dev_id, "set_power")
+                    return
+
+            if lifx_command == CMD_BRIGHTNESS:
+                self.globals[K_LIFX][dev_id][K_STOP_REPEAT_BRIGHTEN] = True
+                self.globals[K_LIFX][dev_id][K_STOP_REPEAT_DIM] = True
+                duration = int(self.globals[K_LIFX][dev_id][K_DURATION_DIM_BRIGHTEN] * 1000)
+            else:
+                duration = 0
+
+            if saturation > 0:  # check if white or colour (colour if saturation > 0)
+                # colour
+                if newBrightness > 32768:
+                    saturation = int(65535 - ((newBrightness - 32768) * 1.98))
+                    brightness = 65535
+                else:
+                    saturation = 65535
+                    brightness = int(newBrightness * 2.0)
+            else:
+                # White
+                brightness = int(newBrightness)
+
+            self.lh_logger.debug(u"LIFX COMMAND [BRIGHTNESS]; SET-COLOR for {0}:"
+                                 u" Hue={1}, Saturation={2}, Brightness={3}, Kelvin={4}"
+                                 .format(indigo.devices[dev_id].name, hue, saturation,
+                                         brightness, kelvin))
+
+            try:
+                hsbk = set_hsbk(hue, saturation, brightness, kelvin)
+                self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_color(hsbk, duration, True)
+                self.update_status_from_message(lifx_command, dev_id, powerLevel, hsbk)
+                self.communication_ok(dev_id, lifx_command)
+            except (StandardError, WorkflowException, IOError) as error:
+                self.communication_lost(dev_id, "set_color")
+                return
+
+            self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = lifx_command
+
+        except StandardError as standard_error_message:
+            self.lh_logger.error(u"StandardError detected in 'process_dim_brighten_brightness'. Line {0} has error: {1}"
+                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+
+    def process_dim_by_timer(self, lifx_command, dev, lifx_command_arguments):
+        try:
+            dev_id = dev.id
+
+            if lifx_command == CMD_DIM_BY_TIMER:
+                # Clear any outstanding timers
+                self.clear_dim_by_timer_timer(dev)
+                self.globals[K_LIFX][dev_id][K_STOP_REPEAT_DIM] = False
+                self.globals[K_LIFX][dev_id][K_STOP_REPEAT_BRIGHTEN] = True
+
+            if not self.globals[K_LIFX][dev_id][K_STOP_REPEAT_DIM]:
+                option = lifx_command_arguments[0]
+                amountToDimBy = lifx_command_arguments[1]
+                timerInterval = lifx_command_arguments[2]
+
+                if int(dev.states["powerLevel"]) > 0:
+                    if dev.brightness == 0:
+                        newBrightness = 0
+                    else:
+                        newBrightness = dev.brightness - amountToDimBy
+                else:
+                    if int(dev.states["indigoBrightness"]) > 0:
+                        newBrightness = int(dev.states["indigoBrightness"])
+                    else:
+                        newBrightness = 0
+
+                if newBrightness <= 0:
+                    newBrightness = 0
+                    dev.updateStateOnServer("brightnessLevel", newBrightness)
+                    self.globals[K_LIFX][dev_id][K_STOP_REPEAT_DIM] = True
+                    self.globals[K_QUEUES][K_LIFXLAN_HANDLER][K_QUEUE].put(
+                        [QUEUE_PRIORITY_COMMAND_HIGH, CMD_DIM, dev_id, [newBrightness]])
+                    self.globals[K_QUEUES][K_LIFXLAN_HANDLER][K_QUEUE].put(
+                        [QUEUE_PRIORITY_COMMAND_HIGH, CMD_OFF, dev_id, None])
+                    self.lh_logger.info(u"'{0}' {1}".format(dev.name, "dimmed to off"))
+                else:
+                    self.globals[K_QUEUES][K_LIFXLAN_HANDLER][K_QUEUE].put(
+                        [QUEUE_PRIORITY_COMMAND_HIGH, CMD_DIM, dev_id, [newBrightness]])
+                    dev.updateStateOnServer("brightnessLevel", newBrightness)
+                    self.globals[K_DEVICE_TIMERS][dev_id]["BRIGHTEN_DIM_BY_TIMER"] = \
+                        threading.Timer(timerInterval,
+                                        self.handle_timer_repeating_queued_dim_by_timer_command,
+                                        [[dev_id, option, amountToDimBy, timerInterval]])
+                    self.globals[K_DEVICE_TIMERS][dev_id]["BRIGHTEN_DIM_BY_TIMER"].start()
+
+        except StandardError as standard_error_message:
+            self.lh_logger.error(u"StandardError detected in 'process_dim_by_timer'. Line {0} has error: {1}"
+                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+
+    def process_get_host_firmware(self, lifx_command, dev):
+        try:
+            dev_id = dev.id
+
+            self.lh_logger.debug(u"Processing {0} for '{1}' ".format(lifx_command, indigo.devices[dev_id].name))
+
+            dev = indigo.devices[dev_id]
+
+            # Clear any outstanding timers
+            self.clear_status_timer(dev)
+
+            try:
+                firmware_version = str(self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].get_host_firmware_version())
+                self.communication_ok(dev_id, lifx_command)
+            except (StandardError, WorkflowException, IOError) as error:
+                self.communication_lost(dev_id, 'get_host_firmware_version')
+                return
+
+            self.lh_logger.debug(
+                u"HOST FIRMWARE VERSION for '{0}': '{1}'".format(indigo.devices[dev_id].name, firmware_version))
+
+            props = dev.pluginProps
+
+            if 'version' in props:
+                version = str(props["version"]).split('|')
+            else:
+                props["version"] = ''
+                version = ["_"]
+
+            if len(version) > 1:
+                if firmware_version == version[1]:
+                    newVersion = firmware_version
+                else:
+                    newVersion = firmware_version + '|' + version[1]
+            else:
+                newVersion = firmware_version
+
+            if props["version"] != newVersion:
+                props["version"] = newVersion
+                dev.replacePluginPropsOnServer(props)
+
+            self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = lifx_command
+
+        except StandardError as standard_error_message:
+            self.lh_logger.error(u"StandardError detected in 'process_get_host_firmware'. Line {0} has error: {1}"
+                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+
+    def process_get_host_info(self, lifx_command, dev, lifx_command_arguments):
+        try:
+            self.lh_logger.debug(u"Processing {0}".format(lifx_command))
+
+        except StandardError as standard_error_message:
+            self.lh_logger.error(u"StandardError detected in 'process_get_host_info'. Line {0} has error: {1}"
+                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+
+    def process_get_group(self, lifx_command, dev, lifx_command_arguments):
+        try:
+            self.lh_logger.debug(u"Processing {0}".format(lifx_command))
+
+        except StandardError as standard_error_message:
+            self.lh_logger.error(u"StandardError detected in 'process_get_group'. Line {0} has error: {1}"
+                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+
+    def process_get_info(self, lifx_command, dev, lifx_command_arguments):
+        try:
+            self.lh_logger.debug(u"Processing {0}".format(lifx_command))
+
+        except StandardError as standard_error_message:
+            self.lh_logger.error(u"StandardError detected in 'process_get_info'. Line {0} has error: {1}"
+                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+
+    def process_get_location(self, lifx_command, dev, lifx_command_arguments):
+        try:
+            self.lh_logger.debug(u"Processing {0}".format(lifx_command))
+
+        except StandardError as standard_error_message:
+            self.lh_logger.error(u"StandardError detected in 'process_get_location'. Line {0} has error: {1}"
+                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+
+    def process_get_port(self, lifx_command, dev):
+        try:
+            dev_id = dev.id
+
+            self.lh_logger.debug(u"Processing {0} for '{1}' ".format(lifx_command, indigo.devices[dev_id].name))
+
+            # Clear any outstanding timers
+            self.clear_status_timer(dev)
+
+            try:
+                port = str(self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].get_port())
+                self.communication_ok(dev_id, lifx_command)
+            except (StandardError, WorkflowException, IOError) as error:
+                self.communication_lost(dev_id, 'get_port')
+                return
+
+            self.lh_logger.info(u"Port for '{0}': '{1}'".format(indigo.devices[dev_id].name, port))
+
+            # props = dev.pluginProps
+
+            # if 'version' in props:
+            #     version = str(props["version"]).split('|')
+            # else:
+            #     props["version"] = ''
+            #     version = [wifi_firmware_version]
+
+            # if len(version) > 0:
+            #     if wifi_firmware_version == version[0]:  # i.e. Firmware and wifi versions are the same
+            #         newVersion = wifi_firmware_version
+            #     else:
+            #         newVersion = str(version[0]) + '|' + wifi_firmware_version
+            # else:
+            #     newVersion = '_|' + wifi_firmware_version
+
+            # if props["version"] != newVersion:
+            #     props["version"] = newVersion
+            #     dev.replacePluginPropsOnServer(props)
+
+            self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = lifx_command
+
+        except StandardError as standard_error_message:
+            self.lh_logger.error(u"StandardError detected in 'process_get_port'. Line {0} has error: {1}"
+                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+
+    def process_get_version(self, lifx_command, dev):
+        try:
+            dev_id = dev.id
+
+            self.lh_logger.debug(u"Processing {0} for '{1}' ".format(lifx_command, indigo.devices[dev_id].name))
+
+            # Clear any outstanding timers
+            self.clear_status_timer(dev)
+
+            try:
+                product = self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].get_product()
+                self.communication_ok(dev_id, lifx_command)
+            except (StandardError, WorkflowException, IOError) as error:
+                self.communication_lost(dev_id, 'get_product')
+                return
+
+            self.lh_logger.debug(u"PRODUCT for '{0}' = '{1}'".format(indigo.devices[dev_id].name, product))
+
+            productFound = False
+            try:
+                model = u"{0}".format(LIFX_PRODUCTS[product][LIFX_PRODUCT_NAME])  # Defined in constants.py
+                productFound = True
+            except KeyError:
+                model = u"LIFX Product - {0}".format(product)
+
+            if dev.model != model:
+                dev.model = model
+                dev.replaceOnServer()
+
+            if productFound:
+                props = dev.pluginProps
+                propsChanged = False
+                if ("SupportsColor" not in props) or (
+                        props["SupportsColor"] != bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_COLOR])):
+                    props["SupportsColor"] = True  # Applies even if just able to change White Levels / Temperature
+                    props["SupportsRGB"] = bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_COLOR])
+                    propsChanged = True
+                if ("SupportsRGB" not in props) or (
+                        props["SupportsRGB"] != bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_COLOR])):
+                    props["SupportsRGB"] = bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_COLOR])
+                    propsChanged = True
+                if ("supports_infrared" not in props) or (
+                        props["supports_infrared"] != bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_INFRARED])):
+                    props["supports_infrared"] = bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_INFRARED])
+                    propsChanged = True
+                if ("SupportsMultizone" not in props) or (props["SupportsMultizone"] != bool(
+                        LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_MULTIZONE])):
+                    props["SupportsMultizone"] = bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_MULTIZONE])
+                    propsChanged = True
+                if propsChanged:
+                    dev.replacePluginPropsOnServer(props)
+
+            self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = lifx_command
+
+        except StandardError as standard_error_message:
+            self.lh_logger.error(u"StandardError detected in 'process_get_version'. Line {0} has error: {1}"
+                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+
+    def process_get_wifi_firmware(self, lifx_command, dev, lifx_command_arguments):
+        try:
+            dev_id = dev.id
+
+            self.lh_logger.debug(u"Processing {0} for '{1}' ".format(lifx_command, indigo.devices[dev_id].name))
+
+            dev = indigo.devices[dev_id]
+
+            # Clear any outstanding timers
+            self.clear_status_timer(dev)
+
+            try:
+                wifi_firmware_version = str(self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].get_wifi_firmware_version())
+                self.communication_ok(dev_id, lifx_command)
+            except (StandardError, WorkflowException, IOError) as error:
+                self.communication_lost(dev_id, 'get_wifi_firmware_version')
+                return
+
+            self.lh_logger.debug(u"WI-FI FIRMWARE VERSION for '{0}': '{1}'".format(indigo.devices[dev_id].name,
+                                                                                   wifi_firmware_version))
+
+            props = dev.pluginProps
+
+            if 'version' in props:
+                version = str(props["version"]).split('|')
+            else:
+                props["version"] = ''
+                version = [wifi_firmware_version]
+
+            if len(version) > 0:
+                if wifi_firmware_version == version[0]:  # i.e. Firmware and wifi versions are the same
+                    newVersion = wifi_firmware_version
+                else:
+                    newVersion = str(version[0]) + '|' + wifi_firmware_version
+            else:
+                newVersion = '_|' + wifi_firmware_version
+
+            if props["version"] != newVersion:
+                props["version"] = newVersion
+                dev.replacePluginPropsOnServer(props)
+
+            self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = lifx_command
+
+        except StandardError as standard_error_message:
+            self.lh_logger.error(u"StandardError detected in 'process_get_wifi_firmware'. Line {0} has error: {1}"
+                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+
+    def process_get_wifi_info(self, lifx_command, dev):
+        try:
+            dev_id = dev.id
+
+            self.lh_logger.debug(u"Processing {0} for '{1}' ".format(lifx_command, indigo.devices[dev_id].name))
+
+            # Clear any outstanding timers
+            self.clear_status_timer(dev)
+
+            try:
+                signal, tx, rx = self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].get_wifi_info_tuple()
+                self.communication_ok(dev_id, lifx_command)
+            except (StandardError, WorkflowException, IOError) as error:
+                self.communication_lost(dev_id, 'get_wifi_info_tuple')
+                return
+
+            self.lh_logger.debug(
+                u"WI-FI INFO [1] for '{0}': Signal={1}, Tx={2}, Rx={3}".format(indigo.devices[dev_id].name, signal,
+                                                                               tx, rx))
+            if signal is not None:
+                signal = str('{:.16f}'.format(signal))[0:12]
+            locale.setlocale(locale.LC_ALL, 'en_US')
+            if tx is not None:
+                tx = locale.format("%d", tx, grouping=True)
+            if rx is not None:
+                rx = locale.format("%d", rx, grouping=True)
+
+            self.lh_logger.debug(
+                u"WI-FI INFO [2] for '{0}': Signal={1}, Tx={2}, Rx={3}".format(indigo.devices[dev_id].name, signal,
+                                                                               tx, rx))
+
+            keyValueList = [
+                {"key": "wifi_signal", "value": signal},
+                {"key": "wifi_tx", "value": tx},
+                {"key": "wifi_rx", "value": rx}
+            ]
+            dev.updateStatesOnServer(keyValueList)
+
+            self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = lifx_command
+
+        except StandardError as standard_error_message:
+            self.lh_logger.error(u"StandardError detected in 'process_get_wifi_info'. Line {0} has error: {1}"
+                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+
+    def process_infrared(self, lifx_command, dev, lifx_command_arguments):
+        try:
+            dev_id = dev.id
+
+            self.lh_logger.debug(u"Processing {0} for '{1}' "
+                                 .format(lifx_command, indigo.devices[dev_id].name))
+
+            dev = indigo.devices[dev_id]
+
+            # Clear any outstanding timers
+            self.clear_status_timer(dev)
+
+            infraredBrightness = 0
+            if lifx_command == CMD_INFRARED_OFF:
+                infraredBrightness = 0
+            elif lifx_command == CMD_INFRARED_ON:
+                infraredBrightness = 65535
+            elif lifx_command == CMD_INFRARED_SET:
+                infraredBrightness = lifx_command_arguments[0]
+                infraredBrightness = int((infraredBrightness * 65535.0) / 100.0)
+                if infraredBrightness > 65535:
+                    infraredBrightness = 65535  # Just in case ;)
+
+            try:
+                self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_infrared(infraredBrightness)
+                self.lh_logger.debug(u"Processing {0} for '{1}'; Infrared Brightness = {2}"
+                                     .format(lifx_command, indigo.devices[dev_id].name, infraredBrightness))
+                self.communication_ok(dev_id, lifx_command)
+            except (StandardError, WorkflowException, IOError):
+                self.communication_lost(dev_id, "set_infrared")
+                return
+
+            self.globals[K_DEVICE_TIMERS][dev_id][K_STATUS] = \
+                threading.Timer(1.0, self.handle_timer_repeating_queued_status_command, [dev, 2])
+            self.globals[K_DEVICE_TIMERS][dev_id][K_STATUS].start()
+
+            self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = lifx_command
+
+        except StandardError as standard_error_message:
+            self.lh_logger.error(u"StandardError detected in 'process_infrared'. Line {0} has error: {1}"
+                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+
+    def process_on_off(self, lifx_command, dev):
+        try:
+            dev_id = dev.id
+
+            # Stop any background timer brighten or dim operation
+            self.globals[K_LIFX][dev_id][K_STOP_REPEAT_DIM] = True
+            self.globals[K_LIFX][dev_id][K_STOP_REPEAT_BRIGHTEN] = True
+
+            self.lh_logger.debug(u"Processing {0} for '{1}' ".format(lifx_command, indigo.devices[dev_id].name))
+
+            dev = indigo.devices[dev_id]
+
+            # Clear any outstanding timers
+            self.clear_status_timer(dev)
+
+            if lifx_command == CMD_ON:
+                duration = float(self.globals[K_LIFX][dev_id][K_DURATION_ON])
+                power = 65535
+            elif lifx_command == CMD_IMMEDIATE_ON:
+                duration = 0
+                power = 65535
+            elif lifx_command == CMD_OFF:
+                duration = float(self.globals[K_LIFX][dev_id][K_DURATION_OFF])
+                power = 0
+            else:
+                duration = 0
+                power = 0
+            timer_duration = duration
+            duration = int(duration * 1000)
+            try:
+                self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_power(power, duration)
+                self.communication_ok(dev_id, lifx_command)
+            except WorkflowException:
+                self.communication_lost(dev_id, "set_power")
+                return
+
+            self.globals[K_DEVICE_TIMERS][dev_id][K_STATUS] = \
+                threading.Timer(1.0,
+                                self.handle_timer_repeating_queued_status_command,
+                                [dev, timer_duration])
+            self.globals[K_DEVICE_TIMERS][dev_id][K_STATUS].start()
+
+            self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = lifx_command
+
+        except StandardError as standard_error_message:
+            self.lh_logger.error(u"StandardError detected in 'process_on_off'. Line {0} has error: {1}".format(
+                sys.exc_traceback.tb_lineno, standard_error_message))
+
+    def process_set_label(self, lifx_command, dev):
+        try:
+            dev_id = dev.id
+
+            self.lh_logger.debug(u"Processing {0} for '{1}' ".format(lifx_command, indigo.devices[dev_id].name))
+
+            dev = indigo.devices[dev_id]
+
+            # Clear any outstanding timers
+            self.clear_status_timer(dev)
+
+            try:
+                self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_label(dev.name)
+                self.communication_ok(dev_id, lifx_command)
+            except (StandardError, WorkflowException, IOError) as error:
+                self.communication_lost(dev_id, 'set_label')
+
+            self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = lifx_command
+
+        except StandardError as standard_error_message:
+            self.lh_logger.error(u"StandardError detected in 'process_set_label'. Line {0} has error: {1}"
+                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+
+    def process_standard(self, lifx_command, dev, lifx_command_arguments):
+        try:
+            dev_id = dev.id
+
+            # Stop any background timer brighten or dim operation
+            self.globals[K_LIFX][dev_id][K_STOP_REPEAT_DIM] = True
+            self.globals[K_LIFX][dev_id][K_STOP_REPEAT_BRIGHTEN] = True
+
+            turnOnIfOff, targetMode, targetHue, targetSaturation, \
+                targetBrightness, targetKelvin, targetDuration = lifx_command_arguments
+
+            self.lh_logger.debug(u"LIFX COMMAND [STANDARD]; Target for {0}: TOIF={1}, Mode={2}, Hue={3},"
+                                 u" Saturation={4}, Brightness={5}, Kelvin={6}, Duration={7}"
+                                 .format(indigo.devices[dev_id].name, turnOnIfOff, targetMode, targetHue,
+                                         targetSaturation, targetBrightness, targetKelvin, targetDuration))
+
+            # Clear any outstanding timers
+            self.clear_status_timer(dev)
+
+            lifx_io_ok, power, hsbk = self.get_color(dev_id, self.globals[K_LIFX][dev_id][K_LIFX_DEVICE])
+            self.lh_logger.debug(u"LIFX COMMAND [COLOR] lifx_io_ok for {0} =  {1}, HSBK = {2}".format(
+                indigo.devices[dev_id].name, lifx_io_ok, hsbk))
+            if lifx_io_ok:
+                hue = hsbk[0]
+                saturation = hsbk[1]
+                brightness = hsbk[2]
+                kelvin = hsbk[3]
+
+                self.lh_logger.debug(u"LIFX COMMAND [COLOR]; GET-COLOR for {0}:"
+                                     u" Hue={1}, Saturation={2}, Brightness={3}, Kelvin={4}"
+                                     .format(indigo.devices[dev_id].name, hue, saturation, brightness, kelvin))
+
+                if targetMode == 'White':
+                    saturation = 0  # Force WHITE mode
+                    if targetKelvin != '-':
+                        kelvin = int(targetKelvin)
+                else:
+                    # Assume 'Color'
+                    if targetHue != '-':
+                        hue = int((float(targetHue) * 65535.0) / 360.0)
+                    if targetSaturation != '-':
+                        saturation = int((float(targetSaturation) * 65535.0) / 100.0)
+                if targetBrightness != '-':
+                    brightness = int((float(targetBrightness) * 65535.0) / 100.0)
+
+                if targetDuration != '-':
+                    duration = int(float(targetDuration) * 1000)
+                else:
+                    duration = int(self.globals[K_LIFX][dev_id][K_DURATION_COLOR_WHITE] * 1000)
+
+                self.lh_logger.debug(u"LIFX COMMAND [STANDARD][{0}]; SET-COLOR for {1}:"
+                                     u" Hue={2}, Saturation={3}, Brightness={4}, Kelvin={5}, duration={6}"
+                                     .format(targetMode, indigo.devices[dev_id].name, hue, saturation,
+                                             brightness, kelvin, duration))
+
+                if power == 0 and turnOnIfOff:
+                    try:
+                        hsbk = set_hsbk(hue, saturation, brightness, kelvin)
+                        self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_color(hsbk, 0)
+                        self.communication_ok(dev_id, lifx_command)
+                    except (StandardError, WorkflowException, IOError) as error:
+                        self.communication_lost(dev_id, 'set_color')
+                        return
+                    power = 65535
+                    try:
+                        self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_power(power, duration)
+                        self.communication_ok(dev_id, lifx_command)
+                    except (StandardError, WorkflowException, IOError) as error:
+                        self.communication_lost(dev_id, 'set_power')
+                        return
+                else:
+                    if power == 0:
+                        duration = 0  # As power is off. might as well do apply command straight away
+                    try:
+                        hsbk = set_hsbk(hue, saturation, brightness, kelvin)
+                        self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_color(hsbk, duration)
+                        self.communication_ok(dev_id, lifx_command)
+                    except (StandardError, WorkflowException, IOError) as error:
+                        self.communication_lost(dev_id, 'set_color')
+                        return
+
+                timer_duration = int(duration / 1000)  # Convert back from milliseconds
+                self.globals[K_DEVICE_TIMERS][dev_id][K_STATUS] = \
+                    threading.Timer(1.0, self.handle_timer_repeating_queued_status_command, [dev, timer_duration])
+
+                self.globals[K_DEVICE_TIMERS][dev_id][K_STATUS].start()
+
+            self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = lifx_command
+
+        except StandardError as standard_error_message:
+            self.lh_logger.error(u"StandardError detected in 'process_standard'. Line {0} has error: {1}"
+                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+
+    def process_status(self, lifx_command, dev):
+        try:
+            dev_id = dev.id
+
+            if not dev.states["discovered"]:
+                # if not dev.states["no_ack_state"]:
+                # if not dev.states["connected"]:
+                self.globals[K_LIFX][dev_id][K_CONNECTED] = False
+                dev.updateStateOnServer(key="connected", value=False)
+                self.handle_no_ack_status(dev)
+
+            if self.globals[K_LIFX][dev_id][K_LIFX_DEVICE] is None:
+                self.lh_logger.debug(u"PROCESS STATUS: K_LIFX_DEVICE is None for device '{0}'".format(dev.name))
+                lifx_ip_address = dev.pluginProps["ip_address"]
+                self.globals[K_LIFX][dev_id][K_LIFX_DEVICE] = Light(dev.address, lifx_ip_address)
+                try:
+                    self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].refresh()
+                    refreshed = True
+                except (StandardError, WorkflowException):
+                    refreshed = False
+                if refreshed:
+                    indigo.device.enable(dev_id, value=False)
+                    indigo.device.enable(dev_id, value=True)
+                else:
+                    self.globals[K_LIFX][dev_id][K_LIFX_DEVICE] = None
+                    if lifx_command == CMD_RECOVERY_STATUS:
+                        self.lh_logger.debug(u"Unable to reconnect to LIFX device '{0}'".format(dev.name))
+                return
+
+            lifx_io_ok, power, hsbk = \
+                self.get_color(dev_id, self.globals[K_LIFX][dev_id][K_LIFX_DEVICE])
+            if lifx_io_ok:
+                self.update_status_from_message(lifx_command, dev_id, power, hsbk)
+
+                props = dev.pluginProps
+                if ("supports_infrared" in props) and props["supports_infrared"]:
+                    lifx_io_ok, infrared_brightness = \
+                        self.get_infrared(dev_id,
+                                          self.globals[K_LIFX][dev_id][K_LIFX_DEVICE])
+                    if lifx_io_ok:
+                        try:
+                            indigo_infrared_brightness = float((infrared_brightness * 100) / 65535)
+                            keyValueList = [
+                                {"key": "infrared_brightness", "value": infrared_brightness},
+                                {"key": "indigo_infrared_brightness", "value": indigo_infrared_brightness}]
+                            dev.updateStatesOnServer(keyValueList)
+
+                            self.lh_logger.debug(u"LifxlanHandler Infrared Level for '{0}' is: {1}"
+                                                 .format(dev.name, indigo_infrared_brightness))
+
+                        except (StandardError, WorkflowException, IOError) as standard_error_message:
+
+                            self.lh_logger.error(u"StandardError detected communicating with LIFX lamp '{0}'."
+                                                 u" Line {1} has error: {2}"
+                                                 .format(dev.name, sys.exc_traceback.tb_lineno, standard_error_message))
+
+            self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = lifx_command
+
+        except StandardError as standard_error_message:
+            self.lh_logger.error(u"StandardError detected in 'process_status' for LIFX device '{0}. Line {1} has error: {2}"
+                                 .format(dev.name, sys.exc_traceback.tb_lineno, standard_error_message))
+
+    def process_waveform(self, lifx_command, dev, lifx_command_arguments):
+        try:
+            dev_id = dev.id
+
+            # Stop any background timer brighten or dim operation
+            self.globals[K_LIFX][dev_id][K_STOP_REPEAT_DIM] = True
+            self.globals[K_LIFX][dev_id][K_STOP_REPEAT_BRIGHTEN] = True
+
+            targetMode, targetHue, targetSaturation, targetBrightness, targetKelvin, \
+                targetTransient, targetPeriod, targetCycles, targetDuty_cycle, targetWaveform = lifx_command_arguments
+
+            # Clear any outstanding timers
+            self.clear_status_timer(dev)
+            self.clear_waveform_off_timer(dev)
+
+            lifx_io_ok, power, hsbk = self.get_color(dev_id, self.globals[K_LIFX][dev_id][K_LIFX_DEVICE])
+            self.lh_logger.debug(u"LIFX COMMAND [COLOR] lifx_io_ok for {0} =  {1}, HSBK = {2}".format(
+                indigo.devices[dev_id].name, lifx_io_ok, hsbk))
+            if lifx_io_ok:
+                hue = hsbk[0]
+                saturation = hsbk[1]
+                brightness = hsbk[2]
+                kelvin = hsbk[3]
+
+                self.lh_logger.debug(u"LIFX COMMAND [COLOR]; GET-COLOR for {0}:"
+                                     u" Hue={1}, Saturation={2}, Brightness={3}, Kelvin={4}"
+                                     .format(indigo.devices[dev_id].name, hue, saturation, brightness, kelvin))
+
+                deviceAlreadyOn = True
+                if power == 0:
+                    deviceAlreadyOn = False
+                    duration = 0
+                    power = 65535
+                    duration = int(duration * 1000)
+                    try:
+                        self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_power(power, duration)
+                        self.communication_ok(dev_id, lifx_command)
+                    except (StandardError, WorkflowException, IOError) as error:
+                        self.communication_lost(dev_id, 'set_power')
+                        return
+
+                if targetMode == 'White':
+                    saturation = 0  # Force WHITE mode
+                    if targetKelvin != '-':
+                        kelvin = int(kelvin)
+                else:
+                    # Assume 'COLOR'
+                    if targetHue != '-':
+                        hue = int((float(targetHue) * 65535.0) / 360.0)
+                    if targetSaturation != '-':
+                        saturation = int((float(targetSaturation) * 65535.0) / 100.0)
+                if targetBrightness != '-':
+                    brightness = int((float(targetBrightness) * 65535.0) / 100.0)
+                hsbk = set_hsbk(hue, saturation, brightness, kelvin)
+
+                if targetTransient:
+                    transient = int(1)
+                else:
+                    transient = int(0)
+                period = int(targetPeriod)
+                cycles = float(targetCycles)
+                duty_cycle = int(targetDuty_cycle)
+                waveform = int(targetWaveform)
+
+                self.lh_logger.debug(u"LIFX COMMAND [WAVEFORM]; SET-WAVEFORM for {0}:"
+                                     u" Hue={1}, Saturation={2}, Brightness={3}, Kelvin={4}"
+                                     .format(indigo.devices[dev_id].name, hue, saturation, brightness, kelvin))
+                self.lh_logger.debug(u"LIFX COMMAND [WAVEFORM]; SET-WAVEFORM for {0}:"
+                                     u" Transient={1}, Period={2}, Cycles={3}, Duty_cycle={4}, Waveform={5}"
+                                     .format(indigo.devices[dev_id].name,
+                                             transient, period, cycles, duty_cycle, waveform))
+
+                try:
+                    self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_waveform(
+                        transient, hsbk, period, cycles, duty_cycle, waveform)
+                    self.communication_ok(dev_id, lifx_command)
+                except (StandardError, WorkflowException, IOError) as error:
+                    self.communication_lost(dev_id, 'set_waveform')
+                    return
+
+                if not deviceAlreadyOn:
+                    timerSetFor = float((float(period) / 1000.0) * cycles)
+                    self.globals[K_DEVICE_TIMERS][dev_id]["WAVEFORM_OFF"] = \
+                        threading.Timer(timerSetFor, self.handle_timer_waveform_off_command, [dev])
+                    self.globals[K_DEVICE_TIMERS][dev_id]["WAVEFORM_OFF"].start()
+
+            self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = lifx_command
+
+        except StandardError as standard_error_message:
+            self.lh_logger.error(u"StandardError detected in 'process_waveform'. Line {0} has error: {1}"
+                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+
+    def process_white(self, lifx_command, dev, lifx_command_arguments):
+        try:
+            dev_id = dev.id
+
+            # Stop any background timer brighten or dim operation
+            self.globals[K_LIFX][dev_id][K_STOP_REPEAT_DIM] = True
+            self.globals[K_LIFX][dev_id][K_STOP_REPEAT_BRIGHTEN] = True
+
+            targetWhiteLevel, targetWhiteTemperature = lifx_command_arguments
+
+            # Clear any outstanding timers
+            self.clear_status_timer(dev)
+
+            lifx_io_ok, power, hsbk = \
+                self.get_color(dev_id,
+                               self.globals[K_LIFX][dev_id][K_LIFX_DEVICE])
+
+            self.lh_logger.debug(u"LIFX COMMAND [WHITE] lifx_io_ok for {0} =  {1}, HSBK = {2}"
+                                 .format(indigo.devices[dev_id].name, lifx_io_ok, hsbk))
+            if lifx_io_ok:
+                hue = hsbk[0]
+                saturation = hsbk[1]
+                brightness = hsbk[2]
+                kelvin = hsbk[3]
+
+                self.lh_logger.debug(u"LIFX COMMAND [WHITE]; GET-COLOR for {0}: Hue={1},"
+                                     u" Saturation={2}, Brightness={3}, Kelvin={4}"
+                                     .format(indigo.devices[dev_id].name, hue, saturation,
+                                             brightness, kelvin))
+
+                if power == 0 and self.globals[K_LIFX][dev_id]["turn_on_if_off"]:
+                    # Need to reset existing brightness to 0 before turning on
+                    try:
+                        hsbkWithBrightnessZero = set_hsbk(hue, saturation, 0, kelvin)
+                        self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_color(
+                            hsbkWithBrightnessZero, 0)
+                    except (StandardError, WorkflowException, IOError) as error:
+                        self.communication_lost(dev_id, "set_color")
+                        return
+                    # Need to turn on LIFX device as currently off
+                    power = 65535
+                    try:
+                        self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_power(power, 0)
+                        self.communication_ok(dev_id, lifx_command)
+                    except (StandardError, WorkflowException, IOError) as error:
+                        self.communication_lost(dev_id, "set_power")
+                        return
+
+                saturation = 0
+                brightness = int((targetWhiteLevel * 65535.0) / 100.0)
+                kelvin = int(targetWhiteTemperature)
+                duration = int(self.globals[K_LIFX][dev_id][K_DURATION_COLOR_WHITE] * 1000)
+
+                self.lh_logger.debug(u"LIFX COMMAND [WHITE]; SET-COLOR for {0}:"
+                                     u" Hue={1}, Saturation={2}, Brightness={3}, Kelvin={4}"
+                                     .format(indigo.devices[dev_id].name, hue, saturation,
+                                             brightness, kelvin))
+
+                try:
+                    hsbk = set_hsbk(hue, saturation, brightness, kelvin)
+                    self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_color(hsbk, duration)
+                    self.communication_ok(dev_id, lifx_command)
+                except (StandardError, WorkflowException, IOError) as error:
+                    self.communication_lost(dev_id, "set_color")
+                    return
+
+                timer_duration = int(self.globals[K_LIFX][dev_id][K_DURATION_COLOR_WHITE])
+                self.globals[K_DEVICE_TIMERS][dev_id][K_STATUS] = \
+                    threading.Timer(1.0,
+                                    self.handle_timer_repeating_queued_status_command,
+                                    [dev, timer_duration])
+
+                self.globals[K_DEVICE_TIMERS][dev_id][K_STATUS].start()
+
+            self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = lifx_command
+
+        except StandardError as standard_error_message:
+            self.lh_logger.error(u"StandardError detected in 'process_white'. Line {0} has error: {1}"
+                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+
+    def update_status_from_message(self, lifxCommand, dev_id, power, hsbk):
+        try:
+            dev = indigo.devices[dev_id]
 
             hue, saturation, brightness, kelvin = hsbk
-            self.lifxlanHandlerDebugLogger.debug(u"HANDLE '%s' MESSAGE for %s: Power=%s, Hue=%s, Saturation=%s, Brightness=%s, Kelvin=%s" % (lifxCommand, indigo.devices[lifxCommandDevId].name, power, hue, saturation, brightness, kelvin))
+            self.lh_logger.debug(u"HANDLE '{0}' MESSAGE for {1}:"
+                                 u" Power={2}, Hue={3}, Saturation={4}, Brightness={5}, Kelvin={6}"
+                                 .format(lifxCommand, indigo.devices[dev_id].name, power, hue, saturation,
+                                         brightness, kelvin))
 
             if power > 0:
-                self.globals['lifx'][lifxCommandDevId]['onState'] = True
-                self.globals['lifx'][lifxCommandDevId]['onOffState'] = 'on'
+                self.globals[K_LIFX][dev_id]["onState"] = True
+                self.globals[K_LIFX][dev_id]["onOffState"] = "on"
             else:
-                self.globals['lifx'][lifxCommandDevId]['onState'] = False                                    
-                self.globals['lifx'][lifxCommandDevId]['onOffState'] = 'off'
-            self.globals['lifx'][lifxCommandDevId]['powerLevel'] = power
+                self.globals[K_LIFX][dev_id]["onState"] = False
+                self.globals[K_LIFX][dev_id]["onOffState"] = "off"
+            self.globals[K_LIFX][dev_id]["powerLevel"] = power
 
             # Color [0-7]: HSBK
             # Reserved [8-9]: signed 16-bit integer
             # Power [10-11]: unsigned 16-bit integer
             # Label [12-43]: string, size=32 bytes
             # Reserved [44-51]: unsigned 64-bit integer
-            self.globals['lifx'][lifxCommandDevId]['hsbkHue'] = hue
-            self.globals['lifx'][lifxCommandDevId]['hsbkSaturation'] = saturation
-            self.globals['lifx'][lifxCommandDevId]['hsbkBrightness'] = brightness
-            self.globals['lifx'][lifxCommandDevId]['hsbkKelvin'] = kelvin
+            self.globals[K_LIFX][dev_id]["hsbkHue"] = hue
+            self.globals[K_LIFX][dev_id]["hsbkSaturation"] = saturation
+            self.globals[K_LIFX][dev_id]["hsbkBrightness"] = brightness
+            self.globals[K_LIFX][dev_id]["hsbkKelvin"] = kelvin
 
-            self.lifxlanHandlerDebugLogger.debug(u'LAMP IP ADDRESS [%s] vs DEBUG FILTERED IP ADDRESS [%s]' % (self.globals['lifx'][lifxCommandDevId]['ipAddress'], self.globals['debug']['debugFilteredIpAddresses']))
+            self.lh_logger.debug(u"  LIGHT_STATE = Power: {0}".format(self.globals[K_LIFX][dev_id]["powerLevel"]))
+            self.lh_logger.debug(u"  LIGHT_STATE = onState: {0}".format(self.globals[K_LIFX][dev_id]["onState"]))
+            self.lh_logger.debug(u"  LIGHT_STATE = onOffState: {0}".format(self.globals[K_LIFX][dev_id]["onOffState"]))
 
-            self.lifxlanHandlerDebugLogger.debug(u"  LIGHT_STATE = Power: %s" % (self.globals['lifx'][lifxCommandDevId]['powerLevel']))
-            self.lifxlanHandlerDebugLogger.debug(u"  LIGHT_STATE = onState: %s" % (self.globals['lifx'][lifxCommandDevId]['onState']))
-            self.lifxlanHandlerDebugLogger.debug(u"  LIGHT_STATE = onOffState: %s" % (self.globals['lifx'][lifxCommandDevId]['onOffState']))
+            # At this point we have an Indigo device id for the lamp
+            #   and can confirm that the indigo device has been started
 
-            # At this point we have an Indigo device id for the lamp and can confirm that the indigo device has been started
+            # Set the current poll count (for 'no ack' check)
+            # self.globals[K_LIFX][dev_id]["lastResponseToPollCount"] = self.globals[K_POLLING][K_COUNT]
+            # self.lh_logger.debug(u"LAST RESPONSE TO POLL COUNT for {0} = {1}"
+            #                      .format(dev.name, self.globals[K_POLLING][K_COUNT]))
 
-            self.globals['lifx'][lifxCommandDevId]['lastResponseToPollCount'] = self.globals['polling']['count']  # Set the current poll count (for 'no ack' check)
-            self.lifxlanHandlerDebugLogger.debug(u'LAST RESPONSE TO POLL COUNT for %s = %s' % (lifxDev.name, self.globals['polling']['count']))
+            self.globals[K_LIFX][dev_id]["initialisedFromlamp"] = True
 
-            self.globals['lifx'][lifxCommandDevId]['initialisedFromlamp'] = True
-
-            if self.globals['lifx'][lifxCommandDevId]['onState']:
-                self.globals['lifx'][lifxCommandDevId]['whenLastOnHsbkHue'] = self.globals['lifx'][lifxCommandDevId]['hsbkHue']         # Value between 0 and 65535
-                self.globals['lifx'][lifxCommandDevId]['whenLastOnHsbkSaturation'] = self.globals['lifx'][lifxCommandDevId]['hsbkSaturation']  # Value between 0 and 65535 (e.g. 20% = 13107)
-                self.globals['lifx'][lifxCommandDevId]['whenLastOnHsbkBrightness'] = self.globals['lifx'][lifxCommandDevId]['hsbkBrightness']  # Value between 0 and 65535
-                self.globals['lifx'][lifxCommandDevId]['whenLastOnHsbkKelvin'] = self.globals['lifx'][lifxCommandDevId]['hsbkKelvin']      # Value between 2500 and 9000
-                self.globals['lifx'][lifxCommandDevId]['whenLastOnPowerLevel'] = self.globals['lifx'][lifxCommandDevId]['powerLevel']      # Value between 0 and 65535
+            if self.globals[K_LIFX][dev_id]["onState"]:
+                self.globals[K_LIFX][dev_id]["whenLastOnHsbkHue"] = \
+                    self.globals[K_LIFX][dev_id]["hsbkHue"]  # Value between 0 and 65535
+                self.globals[K_LIFX][dev_id]["whenLastOnHsbkSaturation"] = \
+                    self.globals[K_LIFX][dev_id]["hsbkSaturation"]  # Value between 0 and 65535 (e.g. 20% = 13107)
+                self.globals[K_LIFX][dev_id]["whenLastOnHsbkBrightness"] = \
+                    self.globals[K_LIFX][dev_id]["hsbkBrightness"]  # Value between 0 and 65535
+                self.globals[K_LIFX][dev_id]["whenLastOnHsbkKelvin"] = \
+                    self.globals[K_LIFX][dev_id]["hsbkKelvin"]  # Value between 2500 and 9000
+                self.globals[K_LIFX][dev_id]["whenLastOnPowerLevel"] = \
+                    self.globals[K_LIFX][dev_id]["powerLevel"]  # Value between 0 and 65535
 
             try:
-                self.globals['lifx'][lifxCommandDevId]['indigoHue'] = float((self.globals['lifx'][lifxCommandDevId]['hsbkHue'] * 360) / 65535)  # Bug Fix 2016-07-09
-            except:
-                self.globals['lifx'][lifxCommandDevId]['indigoHue'] = float(0)
+                self.globals[K_LIFX][dev_id]["indigoHue"] = \
+                    float((self.globals[K_LIFX][dev_id]["hsbkHue"] * 360) / 65535)  # Bug Fix 2016-07-09
+            except ValueError:
+                self.globals[K_LIFX][dev_id]["indigoHue"] = float(0)
             try:
-                self.globals['lifx'][lifxCommandDevId]['indigoSaturation'] = float((self.globals['lifx'][lifxCommandDevId]['hsbkSaturation'] * 100) / 65535)
-            except:
-                self.globals['lifx'][lifxCommandDevId]['indigoSaturation'] = float(0)
+                self.globals[K_LIFX][dev_id]["indigoSaturation"] = \
+                    float((self.globals[K_LIFX][dev_id]["hsbkSaturation"] * 100) / 65535)
+            except ValueError:
+                self.globals[K_LIFX][dev_id]["indigoSaturation"] = float(0)
             try:
-                self.globals['lifx'][lifxCommandDevId]['indigoBrightness'] = float((self.globals['lifx'][lifxCommandDevId]['hsbkBrightness'] * 100) / 65535)
-            except:
-                self.globals['lifx'][lifxCommandDevId]['indigoBrightness'] = float(0)
+                self.globals[K_LIFX][dev_id]["indigoBrightness"] = \
+                    float((self.globals[K_LIFX][dev_id]["hsbkBrightness"] * 100) / 65535)
+            except ValueError:
+                self.globals[K_LIFX][dev_id]["indigoBrightness"] = float(0)
             try:
-                self.globals['lifx'][lifxCommandDevId]['indigoKelvin'] = float(self.globals['lifx'][lifxCommandDevId]['hsbkKelvin'])
-            except:
-                self.globals['lifx'][lifxCommandDevId]['indigoKelvin'] = float(3500)
+                self.globals[K_LIFX][dev_id]["indigoKelvin"] = float(self.globals[K_LIFX][dev_id]["hsbkKelvin"])
+            except ValueError:
+                self.globals[K_LIFX][dev_id]["indigoKelvin"] = float(3500)
             try:
-                self.globals['lifx'][lifxCommandDevId]['indigoPowerLevel'] = float((self.globals['lifx'][lifxCommandDevId]['powerLevel'] * 100) / 65535)
-            except:
-                self.globals['lifx'][lifxCommandDevId]['indigoPowerLevel'] = float(0)
+                self.globals[K_LIFX][dev_id]["indigoPowerLevel"] = \
+                    float((self.globals[K_LIFX][dev_id]["powerLevel"] * 100) / 65535)
+            except ValueError:
+                self.globals[K_LIFX][dev_id]["indigoPowerLevel"] = float(0)
 
-            hsv_hue = float(self.globals['lifx'][lifxCommandDevId]['hsbkHue']) / 65535.0
-            hsv_value = float(self.globals['lifx'][lifxCommandDevId]['hsbkBrightness']) / 65535.0
-            hsv_saturation = float(self.globals['lifx'][lifxCommandDevId]['hsbkSaturation']) / 65535.0
+            hsv_hue = float(self.globals[K_LIFX][dev_id]["hsbkHue"]) / 65535.0
+            hsv_value = float(self.globals[K_LIFX][dev_id]["hsbkBrightness"]) / 65535.0
+            hsv_saturation = float(self.globals[K_LIFX][dev_id]["hsbkSaturation"]) / 65535.0
             red, green, blue = colorsys.hsv_to_rgb(hsv_hue, hsv_saturation, hsv_value)
 
-            self.globals['lifx'][lifxCommandDevId]['indigoRed'] = float(red * 100.0)
-            self.globals['lifx'][lifxCommandDevId]['indigoGreen'] = float(green * 100.0)
-            self.globals['lifx'][lifxCommandDevId]['indigoBlue'] = float(blue * 100.0)
+            self.globals[K_LIFX][dev_id]["indigoRed"] = float(red * 100.0)
+            self.globals[K_LIFX][dev_id]["indigoGreen"] = float(green * 100.0)
+            self.globals[K_LIFX][dev_id]["indigoBlue"] = float(blue * 100.0)
 
             # Set brightness according to LIFX Lamp on/off state - if 'on' use the LIFX Lamp state else set to zero
-            if self.globals['lifx'][lifxCommandDevId]['onState']:
-                if self.globals['lifx'][lifxCommandDevId]['indigoSaturation'] > 0.0:  # check if white or colour (colour if saturation > 0.0)
+            if self.globals[K_LIFX][dev_id]["onState"]:
+                # check if white or colour (colour if saturation > 0.0)
+                if self.globals[K_LIFX][dev_id]["indigoSaturation"] > 0.0:
                     # Colour
                     saturation = hsv_saturation * 100.0
                     brightness = hsv_value * 100.0
-                    calculatedBrightnessLevel = self.calculateBrightnesssLevelFromSV(saturation, brightness)  # returns Float value
-                    self.globals['lifx'][lifxCommandDevId]['brightnessLevel'] = int(calculatedBrightnessLevel * (self.globals['lifx'][lifxCommandDevId]['powerLevel'] / 65535.0))
-                    # self.globals['lifx'][lifxCommandDevId]['brightnessLevel'] = int(self.globals['lifx'][lifxCommandDevId]['powerLevel'])  # returns Int value
-                    # self.lifxlanHandlerDebugLogger.info(u'BRIGHTNESS LEVEL [RECEIVE]: [%s] = %s' % (type(self.globals['lifx'][lifxCommandDevId]['brightnessLevel']), self.globals['lifx'][lifxCommandDevId]['brightnessLevel']))       
+                    calculatedBrightnessLevel = float(calculate_brightness_level_from_sv(saturation, brightness))
+                    self.globals[K_LIFX][dev_id]["brightnessLevel"] = \
+                        int(calculatedBrightnessLevel * (self.globals[K_LIFX][dev_id]["powerLevel"] / 65535.0))
                 else:
                     # White
-                    self.globals['lifx'][lifxCommandDevId]['brightnessLevel'] = int(self.globals['lifx'][lifxCommandDevId]['indigoBrightness'] * (self.globals['lifx'][lifxCommandDevId]['powerLevel'] / 65535.0))
-                    self.globals['lifx'][lifxCommandDevId]['indigoWhiteLevel'] = float(self.globals['lifx'][lifxCommandDevId]['indigoBrightness'])
-            else:       
-                self.globals['lifx'][lifxCommandDevId]['brightnessLevel'] = 0
-
-            self.globals['lifx'][lifxCommandDevId]['connected'] = True
-            self.globals['lifx'][lifxCommandDevId]['noAckState'] = False
+                    self.globals[K_LIFX][dev_id]["brightnessLevel"] = \
+                        int(self.globals[K_LIFX][dev_id]["indigoBrightness"] *
+                            (self.globals[K_LIFX][dev_id]["powerLevel"] / 65535.0))
+                    self.globals[K_LIFX][dev_id]["indigoWhiteLevel"] = \
+                        float(self.globals[K_LIFX][dev_id]["indigoBrightness"])
+            else:
+                self.globals[K_LIFX][dev_id]["brightnessLevel"] = 0
 
             keyValueList = [
-                {'key': 'ipAddress', 'value': self.globals['lifx'][lifxCommandDevId]['ipAddress']},
+                {"key": "lifx_on_state", "value": self.globals[K_LIFX][dev_id]["onState"]},
+                {"key": "lifx_on_off_state", "value": self.globals[K_LIFX][dev_id]["onOffState"]},
 
-                {'key': 'lifxOnState', 'value': self.globals['lifx'][lifxCommandDevId]['onState']},
-                {'key': 'lifxOnOffState', 'value': self.globals['lifx'][lifxCommandDevId]['onOffState']},
+                {"key": "hsbk_hue", "value": self.globals[K_LIFX][dev_id]["hsbkHue"]},
+                {"key": "hsbk_saturation", "value": self.globals[K_LIFX][dev_id]["hsbkSaturation"]},
+                {"key": "hsbk_brightness", "value": self.globals[K_LIFX][dev_id]["hsbkBrightness"]},
+                {"key": "hsbk_kelvin", "value": self.globals[K_LIFX][dev_id]["hsbkKelvin"]},
+                {"key": "power_level", "value": self.globals[K_LIFX][dev_id]["powerLevel"]},
 
-                {'key': 'hsbkHue', 'value': self.globals['lifx'][lifxCommandDevId]['hsbkHue']},
-                {'key': 'hsbkSaturation', 'value': self.globals['lifx'][lifxCommandDevId]['hsbkSaturation']},
-                {'key': 'hsbkBrightness', 'value': self.globals['lifx'][lifxCommandDevId]['hsbkBrightness']},
-                {'key': 'hsbkKelvin', 'value': self.globals['lifx'][lifxCommandDevId]['hsbkKelvin']},
-                {'key': 'powerLevel', 'value': self.globals['lifx'][lifxCommandDevId]['powerLevel']},
+                {"key": "group_label", "value": self.globals[K_LIFX][dev_id]["groupLabel"]},
+                {"key": "location_label", "value": self.globals[K_LIFX][dev_id]["locationLabel"]},
 
-                {'key': 'groupLabel', 'value': self.globals['lifx'][lifxCommandDevId]['groupLabel']},
-                {'key': 'locationLabel', 'value': self.globals['lifx'][lifxCommandDevId]['locationLabel']},
+                {"key": "when_last_on_hsbk_hue", "value": self.globals[K_LIFX][dev_id]["whenLastOnHsbkHue"]},
+                {"key": "when_last_on_hsbk_saturation",
+                 "value": self.globals[K_LIFX][dev_id]["whenLastOnHsbkSaturation"]},
+                {"key": "when_last_on_hsbk_brightness",
+                 "value": self.globals[K_LIFX][dev_id]["whenLastOnHsbkBrightness"]},
+                {"key": "when_last_on_hsbk_kelvin", "value": self.globals[K_LIFX][dev_id]["whenLastOnHsbkKelvin"]},
+                {"key": "when_last_on_power_level", "value": self.globals[K_LIFX][dev_id]["whenLastOnPowerLevel"]},
 
-                {'key': 'whenLastOnHsbkHue', 'value': self.globals['lifx'][lifxCommandDevId]['whenLastOnHsbkHue']},
-                {'key': 'whenLastOnHsbkSaturation', 'value': self.globals['lifx'][lifxCommandDevId]['whenLastOnHsbkSaturation']},
-                {'key': 'whenLastOnHsbkBrightness', 'value': self.globals['lifx'][lifxCommandDevId]['whenLastOnHsbkBrightness']},
-                {'key': 'whenLastOnHsbkKelvin', 'value': self.globals['lifx'][lifxCommandDevId]['whenLastOnHsbkKelvin']},
-                {'key': 'whenLastOnPowerLevel', 'value': self.globals['lifx'][lifxCommandDevId]['whenLastOnPowerLevel']},
+                {"key": "whiteTemperature", "value": self.globals[K_LIFX][dev_id]["indigoKelvin"]},
+                {"key": "whiteLevel", "value": self.globals[K_LIFX][dev_id]["indigoWhiteLevel"]},
 
-                {'key': 'whiteTemperature', 'value': self.globals['lifx'][lifxCommandDevId]['indigoKelvin']},
-                {'key': 'whiteLevel', 'value': self.globals['lifx'][lifxCommandDevId]['indigoWhiteLevel']},
+                {"key": "indigo_hue", "value": self.globals[K_LIFX][dev_id]["indigoHue"]},
+                {"key": "indigo_saturation", "value": self.globals[K_LIFX][dev_id]["indigoSaturation"]},
+                {"key": "indigo_brightness", "value": self.globals[K_LIFX][dev_id]["indigoBrightness"]},
+                {"key": "indigo_kelvin", "value": self.globals[K_LIFX][dev_id]["indigoKelvin"]},
+                {"key": "indigo_power_level", "value": self.globals[K_LIFX][dev_id]["indigoPowerLevel"]},
 
-                {'key': 'indigoHue', 'value': self.globals['lifx'][lifxCommandDevId]['indigoHue']},
-                {'key': 'indigoSaturation', 'value': self.globals['lifx'][lifxCommandDevId]['indigoSaturation']},
-                {'key': 'indigoBrightness', 'value': self.globals['lifx'][lifxCommandDevId]['indigoBrightness']},
-                {'key': 'indigoKelvin', 'value': self.globals['lifx'][lifxCommandDevId]['indigoKelvin']},
-                {'key': 'indigoPowerLevel', 'value': self.globals['lifx'][lifxCommandDevId]['indigoPowerLevel']},
+                {"key": "brightnessLevel",
+                 "value": int(self.globals[K_LIFX][dev_id]["brightnessLevel"]),
+                 "uiValue": str(self.globals[K_LIFX][dev_id]["brightnessLevel"])},
 
-                {'key': 'brightnessLevel', 'value': int(self.globals['lifx'][lifxCommandDevId]['brightnessLevel']), 'uiValue': str(self.globals['lifx'][lifxCommandDevId]['brightnessLevel'])},
-
-                {'key': 'duration', 'value': self.globals['lifx'][lifxCommandDevId]['duration']},
-                {'key': 'durationDimBrighten', 'value': self.globals['lifx'][lifxCommandDevId]['durationDimBrighten']},
-                {'key': 'durationOn', 'value': self.globals['lifx'][lifxCommandDevId]['durationOn']},
-                {'key': 'durationOff', 'value': self.globals['lifx'][lifxCommandDevId]['durationOff']},
-                {'key': 'durationColorWhite', 'value': self.globals['lifx'][lifxCommandDevId]['durationColorWhite']},
-                {'key': 'noAckState', 'value': self.globals['lifx'][lifxCommandDevId]['noAckState']},
-                {'key': 'connected', 'value': self.globals['lifx'][lifxCommandDevId]['connected']}
-
+                {"key": "duration", "value": self.globals[K_LIFX][dev_id]["duration"]},
+                {"key": "duration_dim_brighten", "value": self.globals[K_LIFX][dev_id][K_DURATION_DIM_BRIGHTEN]},
+                {"key": "duration_on", "value": self.globals[K_LIFX][dev_id][K_DURATION_ON]},
+                {"key": "duration_off", "value": self.globals[K_LIFX][dev_id][K_DURATION_OFF]},
+                {"key": "duration_color_white", "value": self.globals[K_LIFX][dev_id][K_DURATION_COLOR_WHITE]}
+                # {"key": "no_ack_state", "value": self.globals[K_LIFX][dev_id][K_NO_ACK_STATE]}
             ]
 
-            props = lifxDev.pluginProps
+            props = dev.pluginProps
             if ("SupportsRGB" in props) and props["SupportsRGB"]:
-                keyValueList.append({'key': 'redLevel', 'value': self.globals['lifx'][lifxCommandDevId]['indigoRed']})
-                keyValueList.append({'key': 'greenLevel', 'value': self.globals['lifx'][lifxCommandDevId]['indigoGreen']})
-                keyValueList.append({'key': 'blueLevel', 'value': self.globals['lifx'][lifxCommandDevId]['indigoBlue']})
+                keyValueList.append({"key": "redLevel", "value": self.globals[K_LIFX][dev_id]["indigoRed"]})
+                keyValueList.append({"key": "greenLevel", "value": self.globals[K_LIFX][dev_id]["indigoGreen"]})
+                keyValueList.append({"key": "blueLevel", "value": self.globals[K_LIFX][dev_id]["indigoBlue"]})
 
-            lifxDev.updateStatesOnServer(keyValueList)
+            dev.updateStatesOnServer(keyValueList)
 
-            lifxDev.updateStateImageOnServer(indigo.kStateImageSel.Auto)
+            dev.updateStateImageOnServer(indigo.kStateImageSel.Auto)
 
-        except StandardError, e:
-            self.lifxlanHandlerDebugLogger.error(u"StandardError detected in 'handleLifxLampMessage'. Line '%s' has error='%s'" % (sys.exc_traceback.tb_lineno, e))   
+        except StandardError as standard_error_message:
+            self.lh_logger.error(u"StandardError detected in 'update_status_from_message'. Line {0} has error: {1}"
+                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))

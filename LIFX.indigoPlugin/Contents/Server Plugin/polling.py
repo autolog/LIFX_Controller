@@ -1,18 +1,27 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# LIFX V4 Controller - Polling © Autolog 2016
-#
+# LIFX V6 Controller © Autolog 2020
 
-try:
-    import indigo
-except:
-    pass
+# TODO: TBA
+# -
+# -
+
+
+# noinspection PyUnresolvedReferences
+# ============================== Native Imports ===============================
 import logging
 import sys
 import threading
 import time
 
+# ============================== Custom Imports ===============================
+try:
+    import indigo
+except ImportError:
+    pass
+
+# ============================== Plugin Imports ===============================
 from constants import *
 
 
@@ -23,68 +32,56 @@ class ThreadPolling(threading.Thread):
         threading.Thread.__init__(self)
 
         self.globals = pluginGlobals
-        self.pollStop = event
+        self.poll_stop = event
 
-        self.previousPollingSeconds = self.globals['polling']['seconds']
+        self.previous_polling_seconds = self.globals[K_POLLING][K_SECONDS]
 
-        self.globals['polling']['threadActive'] = True
+        self.globals[K_POLLING][K_THREAD_ACTIVE] = True
 
-        self.pollingLogger = logging.getLogger("Plugin.polling")
-        self.pollingLogger.setLevel(self.globals['debug']['debugPolling'])
+        self.p_logger = logging.getLogger("Plugin.POLLING")
+        self.p_logger.debug(u"Debugging Polling Thread")
 
-        self.methodTracer = logging.getLogger("Plugin.method")  
-        self.methodTracer.setLevel(self.globals['debug']['debugMethodTrace'])
-
-        self.pollingLogger.info(u"Initialising to poll at %i second intervals" % (self.globals['polling']['seconds']))  
-        self.pollingLogger.debug(u"debugPolling = %s [%s], debugMethodTrace = %s [%s]" % (self.globals['debug']['debugPolling'], 
-                                                                                          type(self.globals['debug']['debugPolling']),
-                                                                                          self.globals['debug']['debugMethodTrace'],
-                                                                                          type(self.globals['debug']['debugMethodTrace'])))
+        self.p_logger.info(u"Initialising to poll at {0} second intervals".format(self.globals[K_POLLING][K_SECONDS]))
 
     def run(self):
         try:  
-            self.methodTracer.threaddebug(u"ThreadPolling")
-            self.pollingLogger.info(u"LIFX Polling thread now running")
+            self.p_logger.debug(u"LIFX Polling thread now running")
 
             while True:
-                self.pollStop.wait(self.globals['polling']['seconds'])
+                self.poll_stop.wait(self.globals[K_POLLING][K_SECONDS])
 
-                if self.pollStop.isSet():
-                    if self.globals['polling']['forceThreadEnd']:
+                if self.poll_stop.isSet():
+                    if self.globals[K_POLLING][K_FORCE_THREAD_END]:
                         break
                     else:
-                        self.pollStop.clear()
+                        self.poll_stop.clear()
 
-                # Check if monitoring / debug options have changed and if so set accordingly
-                if self.globals['debug']['previousDebugPolling'] != self.globals['debug']['debugPolling']:
-                    self.globals['debug']['previousDebugPolling'] = self.globals['debug']['debugPolling']
-                    self.pollingLogger.setLevel(self.globals['debug']['debugPolling'])
-                if self.globals['debug']['previousDebugMethodTrace'] != self.globals['debug']['debugMethodTrace']:
-                    self.globals['debug']['previousDebugMethodTrace'] = self.globals['debug']['debugMethodTrace']
-                    self.pollingLogger.setLevel(self.globals['debug']['debugMethodTrace'])
-
-                self.pollingLogger.debug(u"Start of While Loop ...")  # Message not quite at start as debug settings need to be checked first and also whether thread is being stopped.
+                # Message not quite at start as debug settings need to be checked first and also whether thread is being stopped.
+                self.p_logger.debug(u"Start of While Loop ...")
 
                 # Check if polling seconds interval has changed and if so set accordingly
-                if self.globals['polling']['seconds'] != self.previousPollingSeconds:
-                    self.pollingLogger.info(u"Changing to poll at %i second intervals (was %i seconds)" % (self.globals['polling']['seconds'], self.previousPollingSeconds))  
-                    self.previousPollingSeconds = self.globals['polling']['seconds']
+                if self.globals[K_POLLING][K_SECONDS] != self.previous_polling_seconds:
+                    self.p_logger.info(u"Changing to poll at {0} second intervals (was {1} seconds)"
+                                       .format(self.globals[K_POLLING][K_SECONDS], self.previous_polling_seconds))
+                    self.previous_polling_seconds = self.globals[K_POLLING][K_SECONDS]
 
+                self.p_logger.debug(u"Polling at {0} second intervals".format(self.globals[K_POLLING][K_SECONDS]))
 
-                self.pollingLogger.debug(u"Polling at %i second intervals" % (self.globals['polling']['seconds']))
+                if not self.globals[K_POLLING][K_QUIESCED]:
 
-                if not self.globals['polling']['quiesced']:
-
-                    self.globals['polling']['count'] += 1  # Increment polling count
+                    # self.globals[K_POLLING][K_COUNT] += 1  # Increment polling count
 
                     for dev in indigo.devices.iter("self"):
                         if dev.enabled:
-                            self.globals['queues']['lifxlanHandler'].put([QUEUE_PRIORITY_STATUS_MEDIUM, CMD_STATUS, dev.id, None])
-                                 
+                            self.globals[K_QUEUES][K_LIFXLAN_HANDLER][K_QUEUE].put([QUEUE_PRIORITY_STATUS_MEDIUM, CMD_POLLING_STATUS, dev.id, None])
+                            time.sleep(1.0)  # delay each status request in order to not overload the system
 
-            self.pollingLogger.debug(u"Polling thread ending: pollStop.isSet={}, forceThreadEnd={}, newSeconds={}, previousSeconds={} ".format(self.pollStop.isSet(), self.globals['polling']['forceThreadEnd'], self.globals['polling']['seconds'], self.previousPollingSeconds))
+            self.p_logger.debug(u"Polling thread ending: pollStop.isSet={0}, forceThreadEnd={1}, newSeconds={2}, previousSeconds={3}"
+                                .format(self.poll_stop.isSet(), self.globals[K_POLLING][K_FORCE_THREAD_END],
+                                        self.globals[K_POLLING][K_SECONDS], self.previous_polling_seconds))
 
-        except StandardError, e:
-            self.pollingLogger.error(u"StandardError detected during Polling. Line '%s' has error='%s'" % (sys.exc_traceback.tb_lineno, e))
+        except StandardError, standard_error:
+            self.p_logger.error(u"StandardError detected during Polling. Line {0} has error: {1}"
+                                .format(sys.exc_traceback.tb_lineno, standard_error))
 
-        self.globals['polling']['threadActive'] = False
+        self.globals[K_POLLING][K_THREAD_ACTIVE] = False

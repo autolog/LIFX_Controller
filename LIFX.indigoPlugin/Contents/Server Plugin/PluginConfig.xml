@@ -1,23 +1,26 @@
 <?xml version="1.0"?>
 <PluginConfig>
-    <SupportURL>http://www.yourdomain.com/plugin/ApplianceModule.html</SupportURL>
-    <Field id="description" type="label">
+    <SupportURL>https://forums.indigodomo.com/viewforum.php?f=141</SupportURL>
+    <Field id="description" type="label" alwaysUseInDialogHeightCalc="true">
         <Label>This Plugin controls LIFX devices. 😄</Label>
     </Field>
-    <Field id="copyright" type="label">
-        <Label>Copyright © 2016-2017 Autolog</Label>
+    <Field id="copyright" type="label" alwaysUseInDialogHeightCalc="true">
+        <Label>Copyright © 2020 Autolog</Label>
     </Field>
 
-    <Field id="separator-1" type="separator"/>  
 
-    <Field id="help-1" type="label">
+    <Field id="separator_1" type="separator" alwaysUseInDialogHeightCalc="true"/>
+    <Field id="header_lifx_polling" type="label" fontColor="blue" alwaysUseInDialogHeightCalc="true">
+        <Label>LIFX POLLING</Label>
+    </Field>
+    <Field id="help_header_lifx_polling" type="label">
         <Label>Use polling to update the state of the LIFX lamp(s) periodically.</Label>
     </Field>
-    <Field type="checkbox" id="statusPolling" defaultValue="false" tooltip="Tick to turn on polling of all LIFX lamps">
+    <Field type="checkbox" id="status_polling" defaultValue="false" tooltip="Tick to turn on polling of all LIFX lamps">
         <Label>Polling:</Label>
         <Description>Enable polling of all LIFX lamps.</Description>
     </Field>
-    <Field id="pollingSeconds" type="menu" defaultValue="300" enabledBindingId="statusPolling" tooltip="Select polling interval">
+    <Field id="polling_seconds" type="menu" defaultValue="300" enabledBindingId="status_polling" tooltip="Select polling interval">
         <Label>Polling Interval:</Label>
         <List>
             <Option value="300">Every 5 minutes</Option>
@@ -27,77 +30,122 @@
             <Option value="5">Every 5 seconds</Option>
         </List>
     </Field>
+    <Field id="help_polling_seconds" type="label" alignWithControl="true" alwaysUseInDialogHeightCalc="true">
+        <Label>^ Select the frequency with which the plugin will poll LIFX devices if Polling is enabled. Default is 5 minutes.</Label>
+    </Field>
 
-    <Field id="separator-2" type="separator"/>  
-    <Field id="help-2" type="label">
+
+    <Field id="separator_2" type="separator" alwaysUseInDialogHeightCalc="true"/>
+    <Field id="header_lifx_discovery" type="label" fontColor="blue" alwaysUseInDialogHeightCalc="true">
+        <Label>LIFX DISCOVERY / RECOVERY</Label>
+    </Field>
+    <Field id="help_header_lifx_discovery" type="label" alwaysUseInDialogHeightCalc="true">
         <Label>Discovery is used to find LIFX devices on the network. Repeated discoveries may be required if LIFX devices aren't found.</Label>
     </Field>
-    <Field id="discoveryMinutes" type="textfield" defaultValue="5" tooltip="Specify the number of minutes between discoveries. It must be a positive integer e.g 1, 2, 5 etc.">
+    <Field id="discovery_minutes" type="textfield" defaultValue="5" tooltip="Specify the number of minutes between discoveries. It must be a positive integer e.g 1, 2, 5 etc.">
         <Label>Discovery Minutes:</Label>
     </Field>
-    <Field id="help-3" type="label" fontColor="darkgray" fontSize="small" alignWithControl="true">
-        <Label>^ Specify the number of minutes between discoveries. It must be a positive integer e.g 1, 2, 5 etc.</Label>
+    <Field id="help_discovery_minutes" type="label" alignWithControl="true" alwaysUseInDialogHeightCalc="true">
+        <Label>^ Specify the number of minutes between discoveries. It must be a positive integer e.g. 1, 2, 5 etc.</Label>
     </Field>
-    <Field id="separator-3" type="separator"/>  
+    <Field id="recovery_attempts_limit" type="textfield" defaultValue="30" tooltip="It must be a positive integer e.g 10, 20, 50 etc.">
+        <Label>Recovery Attempts Limit:</Label>
+    </Field>
+    <Field id="help_recovery_attempts_limit" type="label" alignWithControl="true" alwaysUseInDialogHeightCalc="true">
+        <Label>^ Specify the number of times a recovery will be attempted before the LIFX device is put into a 'no ack' state.</Label>
+    </Field>
+    <Field id="recovery_frequency" type="textfield" defaultValue="5" tooltip="It must be a positive integer e.g 5, 10, 30 etc.">
+        <Label>Recovery Frequency [Seconds]:</Label>
+    </Field>
+    <Field id="help_recovery_frequency" type="label" alignWithControl="true" alwaysUseInDialogHeightCalc="true">
+        <Label>^ Specify the number of seconds between recovery attempts</Label>
+    </Field>
+    <Field type="checkbox" id="hide_recovery_messages" default="false" alwaysUseInDialogHeightCalc="true">
+        <Label>Recovery Nessages:</Label>
+        <Description>Check to hide recovery messages in Indigo log.</Description>
+    </Field>
 
-    <Field id="defaultOnDurationLabel" type="label">
+
+    <Field id="separator_3" type="separator"/>
+    <Field id="header_auto_create_lifx_devices" type="label" fontColor="blue" alwaysUseInDialogHeightCalc="true">
+        <Label>DEVICE AUTO-CREATE</Label>
+    </Field>
+    <Field type="checkbox" id="auto_create_lifx_devices" default="false" alwaysUseInDialogHeightCalc="true">
+        <Label>Auto-Create:</Label>
+        <Description>Enable automatic LIFX device creation.</Description>
+    </Field>
+    <Field id="lifx_device_folder_name" type="textfield" defaultValue="LIFX" alwaysUseInDialogHeightCalc="true">
+        <Label>Device Folder Name:</Label>
+    </Field>
+    <Field id="help_lifx_device_folder_name" type="label" alignWithControl="true">
+        <Label>^ Specify the name of the Indigo folder in which the plugin will create any LIFX devices if device Auto-Create is enabled. Leave empty if the folder is not required.</Label>
+    </Field>
+
+
+    <Field id="separator_4" type="separator"/>
+    <Field id="header_presets" type="label" fontColor="blue" alwaysUseInDialogHeightCalc="true">
+        <Label>PRESETS</Label>
+    </Field>
+    <Field id="lifx_variable_folder_name" type="textfield" defaultValue="LIFX">
+        <Label>Variable Folder Name:</Label>
+    </Field>
+    <Field id="help_lifx_variable_folder_name" type="label" alignWithControl="true">
+        <Label>^ Specify the name of the Indigo variable folder which the plugin will use for presets. Leave empty if the folder is not required.</Label>
+    </Field>
+
+
+    <Field id="separator_5" type="separator"/>
+    <Field id="header_durations" type="label" fontColor="blue" alwaysUseInDialogHeightCalc="true">
+        <Label>DURATIONS</Label>
+    </Field>
+    <Field id="help_header_durations" type="label" alwaysUseInDialogHeightCalc="true">
         <Label>Default durations to use when applying changes to LIFX lamps.</Label>
     </Field>
-    <Field type="textfield" id="defaultDurationDimBrighten" defaultValue="1.0">
+    <Field type="textfield" id="default_duration_dim_brighten" defaultValue="1.0" alwaysUseInDialogHeightCalc="true">
         <Label>Dim / Brighten Duration:</Label>
     </Field>
-    <Field type="textfield" id="defaultDurationOn" defaultValue="1.0">
+    <Field type="textfield" id="default_duration_on" defaultValue="1.0" alwaysUseInDialogHeightCalc="true">
         <Label>Turn On Duration:</Label>
     </Field>
-    <Field type="textfield" id="defaultDurationOff" defaultValue="1.0">
+    <Field type="textfield" id="default_duration_off" defaultValue="1.0" alwaysUseInDialogHeightCalc="true">
         <Label>Turn Off Duration:</Label>
     </Field>
-    <Field type="textfield" id="defaultDurationColorWhite" defaultValue="1.0">
+    <Field type="textfield" id="default_duration_color_white" defaultValue="1.0" alwaysUseInDialogHeightCalc="true">
         <Label>Color / White Duration:</Label>
     </Field>
-    <Field id="help-4" type="label" fontColor="darkgray" fontSize="small" alignWithControl="true">
-        <Label>^ Specify durations in seconds or part thereof e.g 2.5</Label>
-    </Field>
-
-    <Field id="separator-5" type="separator"/>  
-
-    <Field type="checkbox" id="monitorDebugEnabled" default="false">
-        <Label>Monitoring / debugging:</Label>
-        <Description>Enable monitoring and debugging options.</Description>
-    </Field>
-
-    <Field id="separator-6" type="separator" visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true"/> 
-
-    <Field id="help-6" type="label" visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true">
-        <Label>Select monitoring / debugging to be performed by ticking required option(s) below and then clicking Save.</Label>
-    </Field>
-    <Field type="checkbox" id="debugGeneral" defaultValue="false"  visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" tooltip="Enable logging of detailed debugging info." alwaysUseInDialogHeightCalc="true">
-        <Label>General:</Label>
-        <Description>Debug 'general' processing.</Description>
-    </Field>
-    <Field type="checkbox" id="monitorLifxlanHandler" default="false" visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true">
-        <Label>Monitor Lifxlan Handler:</Label>
-        <Description>Monitor 'Lifxlan Handler' processing.</Description>
-    </Field>
-    <Field type="checkbox" id="debugLifxlanHandler" default="false" visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true">
-        <Label>Debug Lifxlan Handler:</Label>
-        <Description>Debug 'Lifxlan Handler' processing.</Description>
-    </Field>
-    <Field type="checkbox" id="debugMethodTrace" default="false" visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true">
-        <Label>Method Trace:</Label>
-        <Description>Trace Method calls.</Description>
-    </Field>
-    <Field type="checkbox" id="debugPolling" defaultValue="false" tooltip="Enable debugging of device polling." visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true">
-        <Label>Debug Polling:</Label>
-        <Description>Debug 'polling' processing.</Description>
-    </Field>
-
-    <Field type="textfield" id="debugFilteredIpAddresses" defaultValue="" visibleBindingId="monitorDebugEnabled" visibleBindingValue="true" alwaysUseInDialogHeightCalc="true">
-        <Label>LIFX Lamp Filter IP Address(es):</Label>
-    </Field>
-    <Field id="help-7" type="label" fontColor="darkgray" fontSize="small" alignWithControl="true">
-        <Label>^ Only filter on IP address(es) when debugging specific LIFX devices!</Label>
+    <Field id="help_durations" type="label" alignWithControl="true" alwaysUseInDialogHeightCalc="true">
+        <Label>^ Specify the durations in seconds or part thereof e.g. 2.5</Label>
     </Field>
 
 
+    <Field id="separator_6" type="separator"/>
+    <Field id="header_logging_levels" type="label" fontColor="blue" alwaysUseInDialogHeightCalc="true">
+        <Label>LOGGING LEVELS</Label>
+    </Field>
+
+	<Field id="event_log_level" type="menu" defaultValue="20">
+		<Label>Indigo Event Log:</Label>
+		<List>
+			<Option value="5">Verbose Debugging Messages</Option>
+			<Option value="10">Debugging Messages</Option>
+			<Option value="20">Informational Messages</Option>
+			<Option value="30">Warning Messages</Option>
+			<Option value="40">Error Messages</Option>
+			<Option value="50">Critical Errors Only</Option>
+		</List>
+	</Field>
+	<Field id="plugin_log_level" type="menu" defaultValue="20">
+		<Label>Indigo Plugin Log File:</Label>
+		<List>
+			<Option value="5">Verbose Debugging Messages</Option>
+			<Option value="10">Debugging Messages</Option>
+			<Option value="20">Informational Messages</Option>
+			<Option value="30">Warning Messages</Option>
+			<Option value="40">Error Messages</Option>
+			<Option value="50">Critical Errors Only</Option>
+		</List>
+	</Field>
+    <Field id="help_logging_levels" type="label" alignWithControl="true" alwaysUseInDialogHeightCalc="true">
+        <Label>^ Select the logging level to be performed by selecting the required logging option(s) above.</Label>
+    </Field>
 </PluginConfig>
