@@ -607,9 +607,25 @@
             </Field>
         </ConfigUI>
     </Action>
+
     <Action id="discoverDevices" uiPath="DeviceActions">
         <Name>Discover LIFX Devices</Name>
         <CallbackMethod>processDiscoverDevices</CallbackMethod>
+    </Action>
+
+    <Action id="resetRecoveryTotals" deviceFilter="self.lifxDevice" uiPath="DeviceActions">
+        <Name>Reset Recovery Totals</Name>
+        <CallbackMethod>resetRecoveryTotals</CallbackMethod>
+    </Action>
+
+    <Action id="resetRecoveryTotalsAll" uiPath="DeviceActions">
+        <Name>Reset All Recovery Totals</Name>
+        <CallbackMethod>resetRecoveryTotalsAll</CallbackMethod>
+    </Action>
+
+    <Action id="printRecoveryTotalsAll" uiPath="DeviceActions">
+        <Name>Print All Recovery Totals</Name>
+        <CallbackMethod>printRecoveryTotalsAll</CallbackMethod>
     </Action>
 
 </Actions>

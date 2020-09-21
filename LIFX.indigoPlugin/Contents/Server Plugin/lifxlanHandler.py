@@ -269,6 +269,9 @@ class ThreadLifxlanHandler(threading.Thread):
                                          .format(indigo.devices[dev_id].name))
                 self.handle_no_ack_status(dev)
             else:
+                total_recovery_attempts = int(dev.states["total_recovery_attempts"])
+                total_recovery_attempts += 1
+                dev.updateStateOnServer(key="total_recovery_attempts", value=total_recovery_attempts)
                 if not self.globals[K_PLUGIN_CONFIG_DEFAULT][K_HIDE_RECOVERY_MESSAGES]:
                     self.lh_logger.warning(u"Unable to communicate with LIFX device '{0}'. Retrying: Attempt {1}"
                                            .format(indigo.devices[dev_id].name, self.globals[K_RECOVERY][dev_id][K_ATTEMPTS]))
@@ -302,6 +305,9 @@ class ThreadLifxlanHandler(threading.Thread):
                 # dev.updateStateOnServer(key="no_ack_state", value=False)
                 self.globals[K_LIFX][dev_id][K_CONNECTED] = True
                 dev.updateStateOnServer(key="connected", value=True)
+                total_successful_recoveries = int(dev.states["total_successful_recoveries"])
+                total_successful_recoveries += 1
+                dev.updateStateOnServer(key="total_successful_recoveries", value=total_successful_recoveries)
 
         except StandardError as standard_error_message:
             self.lh_logger.error(u"'communication_ok' error detected. Line {0} has error: {1}"
@@ -354,6 +360,10 @@ class ThreadLifxlanHandler(threading.Thread):
                 dev.updateStateOnServer(key="brightnessLevel", value=0, uiValue=u"0")
             else:
                 dev.setErrorStateOnServer(u"no ack")  # Default to 'no ack' status
+
+            total_no_ack_events = int(dev.states["total_no_ack_events"])
+            total_no_ack_events += 1
+            dev.updateStateOnServer(key="total_no_ack_events", value=total_no_ack_events)
 
         except StandardError as standard_error_message:
             self.lh_logger.error(u"StandardError detected in 'update_status_from_message'. Line {0} has error: {1}"

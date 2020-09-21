@@ -400,6 +400,22 @@ class Plugin(indigo.PluginBase):
                 # Stop device at this point?
                 return
 
+            try:
+                int(dev.states["total_successful_recoveries"])
+            except ValueError:
+                total_successful_recoveries = 0
+                dev.updateStateOnServer(key="total_successful_recoveries", value=total_successful_recoveries)
+            try:
+                int(dev.states["total_recovery_attempts"])
+            except ValueError:
+                total_recovery_attempts = 0
+                dev.updateStateOnServer(key="total_recovery_attempts", value=total_recovery_attempts)
+            try:
+                int(dev.states["total_no_ack_events"])
+            except ValueError:
+                total_no_ack_events = 0
+                dev.updateStateOnServer(key="total_no_ack_events", value=total_no_ack_events)
+
             refresh_count = 0
             refreshed = False
             while refresh_count < 5:
@@ -410,6 +426,9 @@ class Plugin(indigo.PluginBase):
                     break
                 except (StandardError, WorkflowException):
                     if refresh_count == 0:
+                        total_recovery_attempts = int(dev.states["total_recovery_attempts"])
+                        total_recovery_attempts += 1
+                        dev.updateStateOnServer(key="total_recovery_attempts", value=total_recovery_attempts)
                         self.logger.warning(u"Having trouble accessing LIFX device '{0}' with MAC address '{1}' at IP address '{2} . . ."
                                             .format(dev.name, lifx_mac_address, lifx_ip_address))
 
@@ -432,8 +451,16 @@ class Plugin(indigo.PluginBase):
 
                 else:
                     dev.setErrorStateOnServer(u"no ack")
+
+                total_no_ack_events = int(dev.states["total_no_ack_events"])
+                total_no_ack_events += 1
+                dev.updateStateOnServer(key="total_no_ack_events", value=total_no_ack_events)
+
                 return
             elif refresh_count > 0:
+                total_successful_recoveries = int(dev.states["total_successful_recoveries"])
+                total_successful_recoveries += 1
+                dev.updateStateOnServer(key="total_successful_recoveries", value=total_successful_recoveries)
                 self.logger.info(u". . . Successfully recovered access to LIFX device '{0}' with MAC address '{1}' at IP address '{2}"
                                 .format(dev.name, lifx_mac_address, lifx_ip_address))
 
@@ -559,8 +586,8 @@ class Plugin(indigo.PluginBase):
             self.globals[K_LIFX][dev_id]["hsbkKelvin"] = hsbk[3]       # Value between 2500 and 9000
             self.globals[K_LIFX][dev_id]["powerLevel"] = 0             # Value between 0 and 65535
 
-            self.globals[K_LIFX][dev_id]["groupLabel"] = ""
-            self.globals[K_LIFX][dev_id]["locationLabel"] = ""
+            self.globals[K_LIFX][dev_id]["groupLabel"] = self.globals[K_DISCOVERY][dev.address][K_GROUP]
+            self.globals[K_LIFX][dev_id]["locationLabel"] = self.globals[K_DISCOVERY][dev.address][K_LOCATION]
 
             self.globals[K_LIFX][dev_id]["whenLastOnHsbkHue"] = int(0)           # Value between 0 and 65535
             self.globals[K_LIFX][dev_id]["whenLastOnHsbkSaturation"] = int(0)    # Value between 0 and 65535 (e.g. 20% = 13107)
@@ -2615,6 +2642,59 @@ class Plugin(indigo.PluginBase):
         if self.device_supports_infrared(dev, "Turn Off"):
             self.globals[K_QUEUES][K_LIFXLAN_HANDLER][K_QUEUE].put([QUEUE_PRIORITY_COMMAND_HIGH, CMD_INFRARED_OFF, dev.id, None])
             self.logger.info(u"sent '{0}' turn off infrared".format(dev.name))
+
+    def resetRecoveryTotals(self, plugin_action, dev):  # Dev is a LIFX Lamp
+        dev.updateStateOnServer(key="total_no_ack_events", value=0)
+        dev.updateStateOnServer(key="total_recovery_attempts", value=0)
+        dev.updateStateOnServer(key="total_successful_recoveries", value=0)
+
+    def resetRecoveryTotalsAll(self, plugin_action):
+        for dev in indigo.devices.iter("self"):
+            if dev.deviceTypeId == "lifxDevice":
+                dev.updateStateOnServer(key="total_no_ack_events", value=0)
+                dev.updateStateOnServer(key="total_recovery_attempts", value=0)
+                dev.updateStateOnServer(key="total_successful_recoveries", value=0)
+
+    def printRecoveryTotalsAll(self, plugin_action):
+        header = u"\nRECOVERY TOTALS\n===============\n\n"
+
+        detail = ""
+        detail_list = []
+        max_len_dev_name = 0
+        for dev in indigo.devices.iter("self"):
+            if dev.deviceTypeId == "lifxDevice":
+                name = dev.name
+                if len(name) > max_len_dev_name:
+                    max_len_dev_name = len(name)
+                try:
+                    total_no_ack_events = dev.states["total_no_ack_events"]
+                except KeyError:
+                    total_no_ack_events = 0
+                try:
+                    total_recovery_attempts = dev.states["total_recovery_attempts"]
+                except KeyError:
+                    total_recovery_attempts = 0
+                try:
+                    total_successful_recoveries = dev.states["total_successful_recoveries"]
+                except KeyError:
+                    total_successful_recoveries = 0
+                detail_list.append([name, total_no_ack_events, total_recovery_attempts, total_successful_recoveries])
+
+        detail_list.sort()
+        detail_lines = ""
+        for detail in detail_list:
+            name = detail[0].ljust(max_len_dev_name)
+            total_no_ack_events = detail[1]
+            total_recovery_attempts = detail[2]
+            total_successful_recoveries = detail[3]
+            detail_lines = (u"{0}{1}: 'No Ack' = {2}, Attempts = {3}, Recoveries = {4}\n"
+                            .format(detail_lines, name, total_no_ack_events, total_recovery_attempts, total_successful_recoveries))
+
+        footer = u"\n===============\n"
+
+        self.logger.info(u"{0}{1}{2}".format(header, detail_lines, footer))
+
+
 
     def validate_action_config_ui_set_color_white(self, values_dict, type_id, action_id):
         self.logger.debug(u"validate_action_config_ui_set_color_white:"

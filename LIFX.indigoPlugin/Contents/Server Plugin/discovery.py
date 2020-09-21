@@ -62,6 +62,7 @@ def store_discovered_lifx_device(globals_discovery, lifx_device):
         lifx_port = lifx_device.port
         lifx_label = str(lifx_device.label).rstrip()
         lifx_group = lifx_device.group
+        lifx_location = lifx_device.location
         lifx_power_level = lifx_device.power_level
         lifx_host_firmware_build_timestamp = lifx_device.host_firmware_build_timestamp
         lifx_host_firmware_version = lifx_device.host_firmware_version
@@ -83,6 +84,7 @@ def store_discovered_lifx_device(globals_discovery, lifx_device):
             globals_discovery[lifx_mac_address][K_IP_ADDRESS] = lifx_ip_address
             globals_discovery[lifx_mac_address][K_PORT] = lifx_port
             globals_discovery[lifx_mac_address][K_GROUP] = lifx_group
+            globals_discovery[lifx_mac_address][K_LOCATION] = lifx_location
             globals_discovery[lifx_mac_address][K_POWER_LEVEL] = lifx_power_level
             globals_discovery[lifx_mac_address][K_HOST_FIRMWARE_BUILD_TIMESTAMP] = lifx_host_firmware_build_timestamp
             globals_discovery[lifx_mac_address][K_HOST_FIRMWARE_VERSION] = lifx_host_firmware_version
@@ -107,6 +109,9 @@ def store_discovered_lifx_device(globals_discovery, lifx_device):
             globals_discovery[lifx_mac_address][K_CHANGED_INFO] = True
         if globals_discovery[lifx_mac_address][K_GROUP] != lifx_group:
             globals_discovery[lifx_mac_address][K_GROUP] = lifx_group
+            globals_discovery[lifx_mac_address][K_CHANGED_INFO] = True
+        if globals_discovery[lifx_mac_address][K_LOCATION] != lifx_location:
+            globals_discovery[lifx_mac_address][K_LOCATION] = lifx_location
             globals_discovery[lifx_mac_address][K_CHANGED_INFO] = True
         if globals_discovery[lifx_mac_address][K_POWER_LEVEL] != lifx_power_level:
             globals_discovery[lifx_mac_address][K_POWER_LEVEL] = lifx_power_level

@@ -299,6 +299,22 @@
                 <ControlPageLabel>Location Label</ControlPageLabel>
             </State>
 
+            <!-- LIFX Devices 'no ack' and recovery values -->
+            <State id="total_no_ack_events">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Total No Ack Events</TriggerLabel>
+                <ControlPageLabel>Total No Ack Events</ControlPageLabel>
+            </State>
+            <State id="total_recovery_attempts">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Total Recovery Attempts</TriggerLabel>
+                <ControlPageLabel>Total Recovery Attempts</ControlPageLabel>
+            </State>
+            <State id="total_successful_recoveries">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Total Successful Recoveries</TriggerLabel>
+                <ControlPageLabel>Total Successful Recoveries</ControlPageLabel>
+            </State>
 		</States>
 
 		<UiDisplayStateId>onOffState</UiDisplayStateId>
