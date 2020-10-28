@@ -501,7 +501,7 @@ class ThreadLifxlanHandler(threading.Thread):
                 timerInterval = lifx_command_arguments[2]
 
                 newBrightness = dev.brightness + amountToBrightenBy
-                if int(dev.states["powerLevel"]) == 0 or int(dev.states["indigoBrightness"]) < 100:
+                if int(dev.states["power_level"]) == 0 or int(dev.states["indigo_brightness"]) < 100:
                     self.globals[K_QUEUES][K_LIFXLAN_HANDLER][K_QUEUE].put(
                         [QUEUE_PRIORITY_COMMAND_HIGH, CMD_BRIGHTEN, dev_id, [newBrightness]])
                     dev.updateStateOnServer("brightnessLevel", newBrightness)
@@ -693,14 +693,14 @@ class ThreadLifxlanHandler(threading.Thread):
                 amountToDimBy = lifx_command_arguments[1]
                 timerInterval = lifx_command_arguments[2]
 
-                if int(dev.states["powerLevel"]) > 0:
+                if int(dev.states["power_level"]) > 0:
                     if dev.brightness == 0:
                         newBrightness = 0
                     else:
                         newBrightness = dev.brightness - amountToDimBy
                 else:
-                    if int(dev.states["indigoBrightness"]) > 0:
-                        newBrightness = int(dev.states["indigoBrightness"])
+                    if int(dev.states["indigo_brightness"]) > 0:
+                        newBrightness = int(dev.states["indigo_brightness"])
                     else:
                         newBrightness = 0
 
