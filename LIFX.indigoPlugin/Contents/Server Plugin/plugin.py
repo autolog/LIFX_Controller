@@ -530,6 +530,11 @@ class Plugin(indigo.PluginBase):
                 lifx_props["SupportsTwoWhiteLevels"] = False
                 lifx_props_changed = True
 
+            #  Indigo "SupportsColor" property has to be set to enable "SupportsWhite" in Indigo
+            if Supports_white:
+                lifx_props["SupportsColor"] = Supports_white
+                lifx_props_changed = True
+
             supports_infrared = self.globals[K_DISCOVERY][lifx_mac_address][K_PRODUCT_FEATURES]["infrared"]
             if "supports_infrared" not in lifx_props or lifx_props["supports_infrared"] != supports_infrared:
                 lifx_props["supports_infrared"] = supports_infrared
@@ -546,6 +551,7 @@ class Plugin(indigo.PluginBase):
                 lifx_props_changed = True
 
             if lifx_props_changed:
+                # self.logger.debug(u'LIFX PROPS [1]:\n{0}'.format(lifx_props))
                 dev.replacePluginPropsOnServer(lifx_props)
 
             # Cancel any existing timers
