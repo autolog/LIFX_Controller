@@ -23,6 +23,8 @@ try:
 except ImportError:
     pass
 
+import logging
+
 
 class LifxLAN:
     def __init__(self, num_lights=None, verbose=False):
@@ -65,14 +67,22 @@ class LifxLAN:
                     else:
                         device = Light(r.target_addr, r.ip_addr, r.service, r.port, self.source_id, self.verbose)
                     self.lights.append(device)
+                elif device.is_switch():
+                    vendor, product, version = device.get_version_tuple()
+                    indigo.server.log(
+                        u'LIFXLAN [discover_devices] discovered a LIFX Switch device with product code: \'{}\'. Device\'s MAC is \'{}\' and IP Address is \'{}\'. LIFX switch devices are not supported by the plugin'
+                        .format(product, r.target_addr, r.ip_addr), level=logging.WARNING)
                 else:
                     vendor, product, version = device.get_version_tuple()
-                    indigo.server.log(u'LIFXLAN [discover_devices] discovered an unknown LIFX device with product code: \'{}\'. Device\'s MAC is \'{}\' and IP Address is \'{}\'. Plugin is unable to manage this device. Please report this on the support forum.'.format(product, r.target_addr, r.ip_addr), isError=True)
+                    indigo.server.log(
+                        u'LIFXLAN [discover_devices] discovered an unknown LIFX device with product code: \'{}\'. Device\'s MAC is \'{}\' and IP Address is \'{}\'. Plugin is unable to manage this device. Please report this on the support forum.'
+                        .format(product, r.target_addr, r.ip_addr), level=logging.WARNING)
 
             except WorkflowException:
-                # cheating -- it just so happens that all LIFX devices are lights right now
-                device = Light(r.target_addr, r.ip_addr, r.service, r.port, self.source_id, self.verbose)
-                self.lights.append(device)
+                # cheating -- it just so happens that all LIFX devices are lights right now = NOT ANY LONGER!
+                # device = Light(r.target_addr, r.ip_addr, r.service, r.port, self.source_id, self.verbose)
+                # self.lights.append(device)
+                pass
             self.devices.append(device)
 
     def get_multizone_lights(self):

@@ -360,7 +360,7 @@ class Plugin(indigo.PluginBase):
             lifx_mac_address = dev.pluginProps.get("mac_address", "")
 
             if lifx_mac_address == "":
-                self.logger.error(u". . . failed to start device '{0}'. Edit device and select a LIFX device to assign to the Indigo device, save and the re-enable."
+                self.logger.error(u". . . failed to start device '{0}'. Edit device and select a LIFX device to assign to the Indigo device, save and then re-enable."
                                   .format(dev.name, dev.deviceTypeId))
                 indigo.device.enable(dev_id, value=False)
                 return
@@ -390,6 +390,17 @@ class Plugin(indigo.PluginBase):
 
             if dev.address in self.globals[K_DISCOVERY]:  # dev.address is LIFX lamp MAC address
                 match_status_ui = "Previously matched"
+
+                # Check if IP Address has changed
+
+                lifx_props = dev.pluginProps
+                ip_address = self.globals[K_DISCOVERY][lifx_mac_address][K_IP_ADDRESS]
+                if "ip_address" not in lifx_props or lifx_props["ip_address"] != ip_address:
+                    self.logger.warning(u"IP address of LIFX device '{0}' has changed from {1} to {2}".format(dev.name, lifx_props["ip_address"], ip_address))
+                    lifx_props["ip_address"] = ip_address
+                    dev.replacePluginPropsOnServer(lifx_props)
+                    dev.refreshFromServer()
+
             else:
                 # The Indigo device has not been previously discovered as a LIFX lamp
                 match_status_ui = "Newly matched"
@@ -489,10 +500,12 @@ class Plugin(indigo.PluginBase):
 
             lifx_props_changed = False
 
-            ip_address = self.globals[K_DISCOVERY][lifx_mac_address][K_IP_ADDRESS]
-            if "ip_address" not in lifx_props or lifx_props["ip_address"] != ip_address:
-                lifx_props["ip_address"] = ip_address
-                lifx_props_changed = True
+
+            # TODO: Next 4 lines of code have been moved upwards to take place prior to accessing the LIFX devices
+            # ip_address = self.globals[K_DISCOVERY][lifx_mac_address][K_IP_ADDRESS]
+            # if "ip_address" not in lifx_props or lifx_props["ip_address"] != ip_address:
+            #     lifx_props["ip_address"] = ip_address
+            #     lifx_props_changed = True
 
             port = self.globals[K_DISCOVERY][lifx_mac_address][K_PORT]
             if "port" not in lifx_props or lifx_props["port"] != port:
