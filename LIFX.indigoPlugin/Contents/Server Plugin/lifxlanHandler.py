@@ -1568,9 +1568,6 @@ class ThreadLifxlanHandler(threading.Thread):
                 {"key": "when_last_on_hsbk_kelvin", "value": self.globals[K_LIFX][dev_id]["whenLastOnHsbkKelvin"]},
                 {"key": "when_last_on_power_level", "value": self.globals[K_LIFX][dev_id]["whenLastOnPowerLevel"]},
 
-                {"key": "whiteTemperature", "value": self.globals[K_LIFX][dev_id]["indigoKelvin"]},
-                {"key": "whiteLevel", "value": self.globals[K_LIFX][dev_id]["indigoWhiteLevel"]},
-
                 {"key": "indigo_hue", "value": self.globals[K_LIFX][dev_id]["indigoHue"]},
                 {"key": "indigo_saturation", "value": self.globals[K_LIFX][dev_id]["indigoSaturation"]},
                 {"key": "indigo_brightness", "value": self.globals[K_LIFX][dev_id]["indigoBrightness"]},
@@ -1594,6 +1591,9 @@ class ThreadLifxlanHandler(threading.Thread):
                 keyValueList.append({"key": "redLevel", "value": self.globals[K_LIFX][dev_id]["indigoRed"]})
                 keyValueList.append({"key": "greenLevel", "value": self.globals[K_LIFX][dev_id]["indigoGreen"]})
                 keyValueList.append({"key": "blueLevel", "value": self.globals[K_LIFX][dev_id]["indigoBlue"]})
+            if ("supportsWhiteTemperature" in props) and props["supportsWhiteTemperature"]:
+                keyValueList.append({"key": "whiteTemperature", "value": self.globals[K_LIFX][dev_id]["indigoKelvin"]})
+                keyValueList.append({"key": "whiteLevel", "value": self.globals[K_LIFX][dev_id]["indigoWhiteLevel"]})
 
             dev.updateStatesOnServer(keyValueList)
 

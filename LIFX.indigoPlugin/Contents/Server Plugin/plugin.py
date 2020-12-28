@@ -684,8 +684,6 @@ class Plugin(indigo.PluginBase):
                 {"key": "indigo_kelvin", "value": self.globals[K_LIFX][dev_id]["indigoKelvin"]},
                 {"key": "indigo_power_level", "value": self.globals[K_LIFX][dev_id]["indigoPowerLevel"]},
 
-                {"key": "whiteTemperature", "value": self.globals[K_LIFX][dev_id]["indigoKelvin"]},
-                {"key": "whiteLevel", "value": self.globals[K_LIFX][dev_id]["indigoBrightness"]},
 
                 {"key": "duration", "value": self.globals[K_LIFX][dev_id]["duration"]},
                 {"key": "duration_dim_brighten", "value": self.globals[K_LIFX][dev_id][K_DURATION_DIM_BRIGHTEN]},
@@ -698,6 +696,9 @@ class Plugin(indigo.PluginBase):
                 keyValueList.append({"key": "redLevel", "value": self.globals[K_LIFX][dev_id]["indigoRed"]})
                 keyValueList.append({"key": "greenLevel", "value": self.globals[K_LIFX][dev_id]["indigoGreen"]})
                 keyValueList.append({"key": "blueLevel", "value": self.globals[K_LIFX][dev_id]["indigoBlue"]})
+            if ("supportsWhiteTemperature" in props) and props["supportsWhiteTemperature"]:
+                keyValueList.append({"key": "whiteTemperature", "value": self.globals[K_LIFX][dev_id]["indigoKelvin"]})
+                keyValueList.append({"key": "whiteLevel", "value": self.globals[K_LIFX][dev_id]["indigoBrightness"]})
 
             dev.updateStatesOnServer(keyValueList, clearErrorState=False)
 
