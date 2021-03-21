@@ -49,6 +49,7 @@ product_map = {1: "LIFX Original 1000",
                90: "LIFX Clean",
                91: "LIFX Color",
                92: "LIFX Color",
+               93: "LIFX Color A19 1100lm",
                94: "LIFX BR30",
                96: "LIFX Candle White To Warm",
                97: "LIFX A19",
@@ -62,7 +63,7 @@ product_map = {1: "LIFX Original 1000",
                }
 
 # Identifies which products are lights.
-light_products = [1, 3, 10, 11, 15, 18, 19, 20, 22, 27, 28, 29, 30, 31, 32, 36, 37, 38, 39, 40, 43, 44, 45, 46, 49, 50, 51, 52, 53, 55, 57, 59, 60, 61, 62, 63, 64, 65, 66, 68, 81, 82, 85, 87, 88, 90, 91, 92, 94, 96, 97, 98, 99, 100, 101, 109, 110, 111]
+light_products = [1, 3, 10, 11, 15, 18, 19, 20, 22, 27, 28, 29, 30, 31, 32, 36, 37, 38, 39, 40, 43, 44, 45, 46, 49, 50, 51, 52, 53, 55, 57, 59, 60, 61, 62, 63, 64, 65, 66, 68, 81, 82, 85, 87, 88, 90, 91, 92, 93, 94, 96, 97, 98, 99, 100, 101, 109, 110, 111]
 
 # Identifies which products are switches.
 switch_products = [70, 89]
@@ -663,6 +664,18 @@ features_map = {1: {                    # LIFX Original 1000
                     "chain": False,
                     "matrix": False,
                     "min_kelvin": 2500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+                93: {                    # LIFX Color A19 1100lm (UNDOCUMENTED)
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": False,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
                     "max_kelvin": 9000,
                     "hev": False,
                     "relays": False,
