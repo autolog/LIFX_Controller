@@ -1299,15 +1299,15 @@ class Plugin(indigo.PluginBase):
                 pass
 
         if lifx_lamp_selected:
-            values_dict["lifxHue"] = str(self.globals[K_LIFX][devId]["indigoHue"])
-            values_dict["lifxSaturation"] = str(self.globals[K_LIFX][devId]["indigoSaturation"])
-            values_dict["lifxBrightness"] = str(self.globals[K_LIFX][devId]["indigoBrightness"])
-            values_dict["lifxKelvin"] = str(self.globals[K_LIFX][devId]["indigoKelvin"])
+            values_dict["lifxHue"] = str(self.globals[K_LIFX][lifx_dev_id]["indigoHue"])
+            values_dict["lifxSaturation"] = str(self.globals[K_LIFX][lifx_dev_id]["indigoSaturation"])
+            values_dict["lifxBrightness"] = str(self.globals[K_LIFX][lifx_dev_id]["indigoBrightness"])
+            values_dict["lifxKelvin"] = str(self.globals[K_LIFX][lifx_dev_id]["indigoKelvin"])
 
-            hue = self.globals[K_LIFX][devId]["hsbkHue"]
-            saturation = self.globals[K_LIFX][devId]["hsbkSaturation"]
-            value = self.globals[K_LIFX][devId]["hsbkBrightness"]
-            kelvin = self.globals[K_LIFX][devId]["hsbkKelvin"]
+            hue = self.globals[K_LIFX][lifx_dev_id]["hsbkHue"]
+            saturation = self.globals[K_LIFX][lifx_dev_id]["hsbkSaturation"]
+            value = self.globals[K_LIFX][lifx_dev_id]["hsbkBrightness"]
+            kelvin = self.globals[K_LIFX][lifx_dev_id]["hsbkKelvin"]
 
             if saturation != 0:
                 values_dict["lifxMode"] = "Color"
@@ -2504,7 +2504,8 @@ class Plugin(indigo.PluginBase):
             except StandardError:
                 brightness = "-"
             try:
-                duration = str(plugin_action.props.get("durationStandard", "-"))
+                duration = float(plugin_action.props.get("durationStandard", "-"))
+                duration = str(duration)
             except StandardError:
                 duration = "-"
             try:
