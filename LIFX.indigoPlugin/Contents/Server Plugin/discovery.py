@@ -12,7 +12,6 @@
 # noinspection PyUnresolvedReferences
 # ============================== Native Imports ===============================
 import colorsys
-import logging
 import Queue
 import sys
 import threading

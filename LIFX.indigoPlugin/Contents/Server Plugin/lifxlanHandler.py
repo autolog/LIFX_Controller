@@ -4,20 +4,13 @@
 # LIFX V6 Controller - Send & Receive Messages © Autolog 2020
 #
 
-# TODO: TBA
-# -
-# -
-
-
 # noinspection PyUnresolvedReferences
 # ============================== Native Imports ===============================
 import colorsys
 import locale
-import logging
 import Queue
 import sys
 import threading
-import traceback
 
 # ============================== Custom Imports ===============================
 try:
@@ -28,6 +21,7 @@ except ImportError:
 # ============================== Plugin Imports ===============================
 from constants import *
 from lifxlan.lifxlan import *
+
 
 # ============================== Static Methods ===============================
 def calculate_brightness_level_from_sv(arg_saturation, arg_brightness):
@@ -1578,6 +1572,10 @@ class ThreadLifxlanHandler(threading.Thread):
                  "value": int(self.globals[K_LIFX][dev_id]["brightnessLevel"]),
                  "uiValue": str(self.globals[K_LIFX][dev_id]["brightnessLevel"])},
 
+                {"key": "whiteLevel",
+                 "value": int(self.globals[K_LIFX][dev_id]["brightnessLevel"]),
+                 "uiValue": str(self.globals[K_LIFX][dev_id]["brightnessLevel"])},
+
                 {"key": "duration", "value": self.globals[K_LIFX][dev_id]["duration"]},
                 {"key": "duration_dim_brighten", "value": self.globals[K_LIFX][dev_id][K_DURATION_DIM_BRIGHTEN]},
                 {"key": "duration_on", "value": self.globals[K_LIFX][dev_id][K_DURATION_ON]},
@@ -1591,7 +1589,7 @@ class ThreadLifxlanHandler(threading.Thread):
                 keyValueList.append({"key": "redLevel", "value": self.globals[K_LIFX][dev_id]["indigoRed"]})
                 keyValueList.append({"key": "greenLevel", "value": self.globals[K_LIFX][dev_id]["indigoGreen"]})
                 keyValueList.append({"key": "blueLevel", "value": self.globals[K_LIFX][dev_id]["indigoBlue"]})
-            if ("supportsWhiteTemperature" in props) and props["supportsWhiteTemperature"]:
+            if ("SupportsWhiteTemperature" in props) and props["SupportsWhiteTemperature"]:
                 keyValueList.append({"key": "whiteTemperature", "value": self.globals[K_LIFX][dev_id]["indigoKelvin"]})
                 keyValueList.append({"key": "whiteLevel", "value": self.globals[K_LIFX][dev_id]["indigoWhiteLevel"]})
 

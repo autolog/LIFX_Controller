@@ -3,12 +3,9 @@
 #
 # LIFX V6 Controller © Autolog 2020
 
-
 # noinspection PyUnresolvedReferences
 # ============================== Native Imports ===============================
 import colorsys
-from datetime import datetime
-import logging
 import platform
 import Queue
 import re
@@ -73,6 +70,8 @@ class Plugin(indigo.PluginBase):
         startupMessageUi += u"{0:<31} {1}\n".format("Plugin Version:", self.globals[K_PLUGIN_INFO][K_PLUGIN_VERSION])
         startupMessageUi += u"{0:<31} {1}\n".format("Plugin ID:", self.globals[K_PLUGIN_INFO][K_PLUGIN_ID])
         startupMessageUi += u"{0:<31} {1}\n".format("Indigo Version:", indigo.server.version)
+        if float(indigo.server.apiVersion) >= 2.5:
+            startupMessageUi += u"{0:<31} {1}\n".format("Indigo License:", indigo.server.licenseStatus)
         startupMessageUi += u"{0:<31} {1}\n".format("Indigo API Version:", indigo.server.apiVersion)
         startupMessageUi += u"{0:<31} {1}\n".format("Python Version:", sys.version.replace("\n", ""))
         startupMessageUi += u"{0:<31} {1}\n".format("Mac OS Version:", platform.mac_ver()[0])
@@ -356,6 +355,11 @@ class Plugin(indigo.PluginBase):
                 return
 
             dev_id = dev.id
+
+            if float(indigo.server.apiVersion) >= 2.5:
+                if dev.subType != indigo.kDimmerDeviceSubType.ColorBulb:
+                    dev.subType = indigo.kDimmerDeviceSubType.ColorBulb
+                    dev.replaceOnServer()
 
             lifx_mac_address = dev.pluginProps.get("mac_address", "")
 
@@ -696,7 +700,7 @@ class Plugin(indigo.PluginBase):
                 keyValueList.append({"key": "redLevel", "value": self.globals[K_LIFX][dev_id]["indigoRed"]})
                 keyValueList.append({"key": "greenLevel", "value": self.globals[K_LIFX][dev_id]["indigoGreen"]})
                 keyValueList.append({"key": "blueLevel", "value": self.globals[K_LIFX][dev_id]["indigoBlue"]})
-            if ("supportsWhiteTemperature" in props) and props["supportsWhiteTemperature"]:
+            if ("SupportsWhiteTemperature" in props) and props["SupportsWhiteTemperature"]:
                 keyValueList.append({"key": "whiteTemperature", "value": self.globals[K_LIFX][dev_id]["indigoKelvin"]})
                 keyValueList.append({"key": "whiteLevel", "value": self.globals[K_LIFX][dev_id]["indigoBrightness"]})
 
@@ -1285,6 +1289,7 @@ class Plugin(indigo.PluginBase):
             u"actionConfigLifxDeviceSelected [lifxLamp]= {0}".format(str(values_dict["optionLifxDeviceList"])))
 
         lifx_lamp_selected = False  # Start with assuming no lamp selected in dialogue
+        lifx_dev_id = 0  # To suppress PyCharm warning
         if "optionLifxDeviceList" in values_dict:
             try:
                 lifx_dev_id = int(values_dict["optionLifxDeviceList"])

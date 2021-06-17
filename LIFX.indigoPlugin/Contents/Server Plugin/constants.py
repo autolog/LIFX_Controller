@@ -27,7 +27,6 @@ LIFX_DEVICE_TYPEID = 'lifxDevice'  # See definition in Devices.xml
 
 # Globals dictionary 'index' values
 
-
 K_ACTIVE = 0
 K_ADDRESS = 1
 K_API_VERSION = 2
@@ -220,7 +219,7 @@ QUEUE_PRIORITY_POLLING        = 700
 QUEUE_PRIORITY_LOW            = 800
 
 # LIFX product constants
-LIFX_PRODUCTS = {}
+LIFX_PRODUCTS = dict()
 #                    Color, Infrared, Multizone, Name
 LIFX_PRODUCTS[1]  = (True,  False, False, 'Original 1000')
 LIFX_PRODUCTS[3]  = (True,  False, False, 'Color 650')
@@ -256,15 +255,13 @@ LIFX_PRODUCTS[64] = (True,  True, False, 'LIFX+ A19')
 LIFX_PRODUCTS[65] = (True,  True, False, 'LIFX+ BR30')
 LIFX_PRODUCTS[68] = (True,  False, False, 'LIFX Candle')
 
-
 LIFX_PRODUCT_SUPPORTS_COLOR = 0
 LIFX_PRODUCT_SUPPORTS_INFRARED = 1
 LIFX_PRODUCT_SUPPORTS_MULTIZONE = 2
 LIFX_PRODUCT_NAME = 3
 
-
 # LIFX Waveform Types
-LIFX_WAVEFORMS = {}
+LIFX_WAVEFORMS = dict()
 LIFX_WAVEFORMS['0'] = 'Saw'
 LIFX_WAVEFORMS['1'] = 'Sine'
 LIFX_WAVEFORMS['2'] = 'Half-Sine'
@@ -272,7 +269,7 @@ LIFX_WAVEFORMS['3'] = 'Triangle'
 LIFX_WAVEFORMS['4'] = 'Pulse'
 
 # LIFX Kelvin Descriptions (from iOS LIFX App)
-LIFX_KELVINS = {}
+LIFX_KELVINS = dict()
 LIFX_KELVINS[2500] = ((246,221,184), '2500K Ultra Warm')
 LIFX_KELVINS[2750] = ((246,224,184), '2750K Incandescent')
 LIFX_KELVINS[3000] = ((248,227,195), '3000K Warm')
@@ -289,7 +286,6 @@ LIFX_KELVINS[7500] = ((236,236,238), '7500K Blue Daylight')
 LIFX_KELVINS[8000] = ((237,240,246), '8000K Blue Overcast')
 LIFX_KELVINS[8500] = ((236,241,249), '8500K Blue Water')
 LIFX_KELVINS[9000] = ((237,243,252), '9000K Blue Ice')
-
 
 # LIFX message type constants
 DEV_GET_SERVICE         = 2    # Hex = 02
@@ -335,45 +331,45 @@ MZ_STATE_ZONE           = 503  # Hex = 1F7
 MZ_STATE_MULTI_ZONE     = 506  # Hex = 1FA
 
 # LIFX Message Format Dictionary 
-messageTypeDict = {}
-messageTypeDict[DEV_GET_SERVICE]         = {'name':'GetService',        'payloadLength':0,  'resRequired': '0'}
-messageTypeDict[DEV_STATE_SERVICE]       = {'name':'StateService',      'payloadLength':5,  'resRequired': '0'}
-messageTypeDict[DEV_GET_HOST_INFO]       = {'name':'GetHostInfo',       'payloadLength':0,  'resRequired': '0'}
-messageTypeDict[DEV_STATE_HOST_INFO]     = {'name':'StateHostInfo',     'payloadLength':14, 'resRequired': '0'}
-messageTypeDict[DEV_GET_HOST_FIRMWARE]   = {'name':'GetHostFirmware',   'payloadLength':0,  'resRequired': '0'}
-messageTypeDict[DEV_STATE_HOST_FIRMWARE] = {'name':'StateHostFirmware', 'payloadLength':20, 'resRequired': '0'}
-messageTypeDict[DEV_GET_WIFI_INFO]       = {'name':'GetWifiInfo',       'payloadLength':0,  'resRequired': '0'}
-messageTypeDict[DEV_STATE_WIFI_INFO]     = {'name':'StateWifiInfo',     'payloadLength':16, 'resRequired': '0'}
-messageTypeDict[DEV_GET_WIFI_FIRMWARE]   = {'name':'GetWifiFirmware',   'payloadLength':0,  'resRequired': '0'}
-messageTypeDict[DEV_STATE_WIFI_FIRMWARE] = {'name':'StateWifiFirmware', 'payloadLength':20, 'resRequired': '0'}
-messageTypeDict[DEV_GET_POWER]           = {'name':'GetPower',          'payloadLength':0,  'resRequired': '0'}
-messageTypeDict[DEV_SET_POWER]           = {'name':'SetPower',          'payloadLength':2,  'resRequired': '1'}
-messageTypeDict[DEV_STATE_POWER]         = {'name':'StatePower',        'payloadLength':2,  'resRequired': '0'}
-messageTypeDict[DEV_GET_LABEL]           = {'name':'GetLabel',          'payloadLength':0,  'resRequired': '0'}
-messageTypeDict[DEV_SET_LABEL]           = {'name':'SetLabel',          'payloadLength':4,  'resRequired': '1'}
-messageTypeDict[DEV_STATE_LABEL]         = {'name':'StateLabel',        'payloadLength':32, 'resRequired': '0'}
-messageTypeDict[DEV_GET_VERSION]         = {'name':'GetVersion',        'payloadLength':0,  'resRequired': '0'}
-messageTypeDict[DEV_STATE_VERSION]       = {'name':'StateVersion',      'payloadLength':12, 'resRequired': '0'}
-messageTypeDict[DEV_GET_INFO]            = {'name':'GetInfo',           'payloadLength':0,  'resRequired': '0'}
-messageTypeDict[DEV_STATE_INFO]          = {'name':'StateInfo',         'payloadLength':24, 'resRequired': '0'}
-messageTypeDict[DEV_ACKNOWLEDGEMENT]     = {'name':'Acknowledgement',   'payloadLength':0,  'resRequired': '0'}  ### Is this corect 2016-Nov-19
-messageTypeDict[DEV_GET_LOCATION]        = {'name':'GetLocation',       'payloadLength':0,  'resRequired': '0'}
-messageTypeDict[DEV_STATE_LOCATION]      = {'name':'StateLocatiom',     'payloadLength':56, 'resRequired': '0'}
-messageTypeDict[DEV_GET_GROUP]           = {'name':'GetGroup',          'payloadLength':0,  'resRequired': '0'}
-messageTypeDict[DEV_STATE_GROUP]         = {'name':'StateGroup',        'payloadLength':56, 'resRequired': '0'}
-messageTypeDict[DEV_ECHO_REQUEST]        = {'name':'EchoRequest',       'payloadLength':64, 'resRequired': '0'}
-messageTypeDict[DEV_ECHO_RESPONSE]       = {'name':'EchoResponse',      'payloadLength':64, 'resRequired': '0'}
-messageTypeDict[LIGHT_GET]               = {'name':'Get',               'payloadLength':0,  'resRequired': '0'}
-messageTypeDict[LIGHT_SET_COLOR]         = {'name':'SetColor',          'payloadLength':13, 'resRequired': '1'}
-messageTypeDict[LIGHT_SET_WAVEFORM]      = {'name':'SetWaveform',       'payloadLength':0,  'resRequired': '1'}
-messageTypeDict[LIGHT_STATE]             = {'name':'State',             'payloadLength':20, 'resRequired': '0'}
-messageTypeDict[LIGHT_GET_POWER]         = {'name':'GetPower',          'payloadLength':0,  'resRequired': '0'}
-messageTypeDict[LIGHT_SET_POWER]         = {'name':'SetPower',          'payloadLength':6,  'resRequired': '1'}
-messageTypeDict[LIGHT_STATE_POWER]       = {'name':'StatePower',        'payloadLength':2,  'resRequired': '0'}
-messageTypeDict[LIGHT_GET_INFRARED]      = {'name':'GetInfrared',       'payloadLength':0,  'resRequired': '0'}
-messageTypeDict[LIGHT_STATE_INFRARED]    = {'name':'StateInfrared',     'payloadLength':2,  'resRequired': '0'}
-messageTypeDict[LIGHT_SET_INFRARED]      = {'name':'SetInfrared',       'payloadLength':2,  'resRequired': '1'}
-messageTypeDict[MZ_SET_COLOR_ZONES]      = {'name':'SetColorZones',     'payloadLength':15, 'resRequired': '1'}
-messageTypeDict[MZ_GET_COLOR_ZONES]      = {'name':'GetColorZones',     'payloadLength':2,  'resRequired': '0'}
-messageTypeDict[MZ_STATE_ZONE]           = {'name':'StateZone',         'payloadLength':10, 'resRequired': '0'}
-messageTypeDict[MZ_STATE_MULTI_ZONE]     = {'name':'StateMultiZone',    'payloadLength':66, 'resRequired': '0'}
+messageTypeDict = dict()
+messageTypeDict[DEV_GET_SERVICE]         = {'name':'GetService',        'payloadLength': 0,  'resRequired': '0'}
+messageTypeDict[DEV_STATE_SERVICE]       = {'name':'StateService',      'payloadLength': 5,  'resRequired': '0'}
+messageTypeDict[DEV_GET_HOST_INFO]       = {'name':'GetHostInfo',       'payloadLength': 0,  'resRequired': '0'}
+messageTypeDict[DEV_STATE_HOST_INFO]     = {'name':'StateHostInfo',     'payloadLength': 14, 'resRequired': '0'}
+messageTypeDict[DEV_GET_HOST_FIRMWARE]   = {'name':'GetHostFirmware',   'payloadLength': 0,  'resRequired': '0'}
+messageTypeDict[DEV_STATE_HOST_FIRMWARE] = {'name':'StateHostFirmware', 'payloadLength': 20, 'resRequired': '0'}
+messageTypeDict[DEV_GET_WIFI_INFO]       = {'name':'GetWifiInfo',       'payloadLength': 0,  'resRequired': '0'}
+messageTypeDict[DEV_STATE_WIFI_INFO]     = {'name':'StateWifiInfo',     'payloadLength': 16, 'resRequired': '0'}
+messageTypeDict[DEV_GET_WIFI_FIRMWARE]   = {'name':'GetWifiFirmware',   'payloadLength': 0,  'resRequired': '0'}
+messageTypeDict[DEV_STATE_WIFI_FIRMWARE] = {'name':'StateWifiFirmware', 'payloadLength': 20, 'resRequired': '0'}
+messageTypeDict[DEV_GET_POWER]           = {'name':'GetPower',          'payloadLength': 0,  'resRequired': '0'}
+messageTypeDict[DEV_SET_POWER]           = {'name':'SetPower',          'payloadLength': 2,  'resRequired': '1'}
+messageTypeDict[DEV_STATE_POWER]         = {'name':'StatePower',        'payloadLength': 2,  'resRequired': '0'}
+messageTypeDict[DEV_GET_LABEL]           = {'name':'GetLabel',          'payloadLength': 0,  'resRequired': '0'}
+messageTypeDict[DEV_SET_LABEL]           = {'name':'SetLabel',          'payloadLength': 4,  'resRequired': '1'}
+messageTypeDict[DEV_STATE_LABEL]         = {'name':'StateLabel',        'payloadLength': 32, 'resRequired': '0'}
+messageTypeDict[DEV_GET_VERSION]         = {'name':'GetVersion',        'payloadLength': 0,  'resRequired': '0'}
+messageTypeDict[DEV_STATE_VERSION]       = {'name':'StateVersion',      'payloadLength': 12, 'resRequired': '0'}
+messageTypeDict[DEV_GET_INFO]            = {'name':'GetInfo',           'payloadLength': 0,  'resRequired': '0'}
+messageTypeDict[DEV_STATE_INFO]          = {'name':'StateInfo',         'payloadLength': 24, 'resRequired': '0'}
+messageTypeDict[DEV_ACKNOWLEDGEMENT]     = {'name':'Acknowledgement',   'payloadLength': 0,  'resRequired': '0'}  # TODO: Is this correct 2016-Nov-19
+messageTypeDict[DEV_GET_LOCATION]        = {'name':'GetLocation',       'payloadLength': 0,  'resRequired': '0'}
+messageTypeDict[DEV_STATE_LOCATION]      = {'name':'StateLocatiom',     'payloadLength': 56, 'resRequired': '0'}
+messageTypeDict[DEV_GET_GROUP]           = {'name':'GetGroup',          'payloadLength': 0,  'resRequired': '0'}
+messageTypeDict[DEV_STATE_GROUP]         = {'name':'StateGroup',        'payloadLength': 56, 'resRequired': '0'}
+messageTypeDict[DEV_ECHO_REQUEST]        = {'name':'EchoRequest',       'payloadLength': 64, 'resRequired': '0'}
+messageTypeDict[DEV_ECHO_RESPONSE]       = {'name':'EchoResponse',      'payloadLength': 64, 'resRequired': '0'}
+messageTypeDict[LIGHT_GET]               = {'name':'Get',               'payloadLength': 0,  'resRequired': '0'}
+messageTypeDict[LIGHT_SET_COLOR]         = {'name':'SetColor',          'payloadLength': 13, 'resRequired': '1'}
+messageTypeDict[LIGHT_SET_WAVEFORM]      = {'name':'SetWaveform',       'payloadLength': 0,  'resRequired': '1'}
+messageTypeDict[LIGHT_STATE]             = {'name':'State',             'payloadLength': 20, 'resRequired': '0'}
+messageTypeDict[LIGHT_GET_POWER]         = {'name':'GetPower',          'payloadLength': 0,  'resRequired': '0'}
+messageTypeDict[LIGHT_SET_POWER]         = {'name':'SetPower',          'payloadLength': 6,  'resRequired': '1'}
+messageTypeDict[LIGHT_STATE_POWER]       = {'name':'StatePower',        'payloadLength': 2,  'resRequired': '0'}
+messageTypeDict[LIGHT_GET_INFRARED]      = {'name':'GetInfrared',       'payloadLength': 0,  'resRequired': '0'}
+messageTypeDict[LIGHT_STATE_INFRARED]    = {'name':'StateInfrared',     'payloadLength': 2,  'resRequired': '0'}
+messageTypeDict[LIGHT_SET_INFRARED]      = {'name':'SetInfrared',       'payloadLength': 2,  'resRequired': '1'}
+messageTypeDict[MZ_SET_COLOR_ZONES]      = {'name':'SetColorZones',     'payloadLength': 15, 'resRequired': '1'}
+messageTypeDict[MZ_GET_COLOR_ZONES]      = {'name':'GetColorZones',     'payloadLength': 2,  'resRequired': '0'}
+messageTypeDict[MZ_STATE_ZONE]           = {'name':'StateZone',         'payloadLength': 10, 'resRequired': '0'}
+messageTypeDict[MZ_STATE_MULTI_ZONE]     = {'name':'StateMultiZone',    'payloadLength': 66, 'resRequired': '0'}
