@@ -59,11 +59,13 @@
                 <Label>^ The IP address of the LIFX device.</Label>
             </Field>
 
+<!--
             <Field id="update_ip_address" type="button" tooltip="Click button" alwaysUseInDialogHeightCalc="true">
                 <Label>Update IP Address:</Label>
                 <Title>Update</Title>
                 <CallbackMethod>update_ip_address</CallbackMethod>
             </Field>
+-->
 
             <Field id="update_ip_address_help" type="label" fontColor="darkgray" fontSize="mini" alignWithControl="true" alwaysUseInDialogHeightCalc="true">
                 <Label>^ Update the IP address if it has changed since the LIFX device was set-up.</Label>

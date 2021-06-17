@@ -26,6 +26,7 @@ from lifxlanHandler import ThreadLifxlanHandler
 from polling import ThreadPolling
 from lifxlan.lifxlan import *
 
+import socket  # Must be placed AFTER 'from lifxlan.lifxlan import *' statement!
 
 # noinspection PyPep8Naming,PyUnresolvedReferences
 class Plugin(indigo.PluginBase):
@@ -242,6 +243,13 @@ class Plugin(indigo.PluginBase):
                         if self.globals[K_DISCOVERY][key][K_INDIGO_DEVICE_ID] == dev_id:
                             self.globals[K_DISCOVERY][key][K_INDIGO_DEVICE_ID] = 0
 
+                old_ip_address = self.globals[K_DISCOVERY][lifx_mac_address][K_IP_ADDRESS]
+                if "ip_address" in values_dict and values_dict["ip_address"] != old_ip_address:
+                    new_ip_address = values_dict["ip_address"]
+                    self.globals[K_DISCOVERY][lifx_mac_address][K_IP_ADDRESS] = new_ip_address
+                    self.logger.warning(u"LIFX Lamp [{0}] IP Address updated from '{1}' to '{2}'"
+                                        .format(lifx_mac_address, old_ip_address, new_ip_address))
+
                 if "set_name_from_lifx_label" in values_dict and values_dict["set_name_from_lifx_label"]:
                     dev.name = self.globals[K_DISCOVERY][dev.address][K_LABEL]
                     dev.replaceOnServer()
@@ -250,6 +258,45 @@ class Plugin(indigo.PluginBase):
             self.logger.error(u"'closedDeviceConfigUi' error detected. Line '{0}' has error='{1}'"
                               .format(sys.exc_traceback.tb_lineno, standard_error_message))
             return
+
+    # def update_ip_address(self, values_dict, type_id, dev_id):
+    #     try:
+    #
+    #         lifx_mac_address = values_dict["mac_address"]
+    #         new_ip_address = values_dict["ip_address"]
+    #         try:
+    #             socket.inet_aton(new_ip_address)
+    #             pass  # Legal
+    #         except StandardError as standard_error:
+    #             check_error_message = u"illegal IP address string passed to inet_aton"
+    #             standard_error_message = u"{0}".format(standard_error)
+    #             self.logger.warning(u"CEM [{0}: {1}".format(len(check_error_message), check_error_message))
+    #             self.logger.warning(u"SEM[{0}: {1}".format(len(standard_error_message), standard_error_message))
+    #             if standard_error_message == check_error_message:
+    #                 error_dict = indigo.Dict()
+    #                 error_message = u"Update of IP Address to '{0}' rejected as IP address is invalid.".format(new_ip_address)
+    #                 error_dict['ip_address'] = error_message
+    #                 error_dict['showAlertText'] = error_message
+    #                 return values_dict, error_dict
+    #             else:
+    #                 self.logger.error(u"Update LIFX Lamp [{0}] IP Address to '{1}' failed with an error. Line '{2}' has error='{3}'"
+    #                                   .format(lifx_mac_address, new_ip_address, sys.exc_traceback.tb_lineno, standard_error_message))
+    #             return
+    #
+    #         if lifx_mac_address in self.globals[K_DISCOVERY]:
+    #             old_ip_address = self.globals[K_DISCOVERY][lifx_mac_address][K_IP_ADDRESS]
+    #             self.globals[K_DISCOVERY][lifx_mac_address][K_IP_ADDRESS] = new_ip_address
+    #             self.logger.warning(u"LIFX Lamp [{0}] IP Address updated from '{1}' to '{2}'"
+    #                                 .format(lifx_mac_address, old_ip_address, new_ip_address))
+    #         else:
+    #             self.logger.warning(u"Unable to update LIFX Lamp [{0}] IP Address update to '{1}'"
+    #                                 .format(lifx_mac_address, new_ip_address))
+    #
+    #         return
+    #
+    #     except StandardError as standard_error_message:
+    #         self.logger.error(u"'update_ip_address' error detected. Line '{0}' has error='{1}'"
+    #                           .format(sys.exc_traceback.tb_lineno, standard_error_message))
 
     def closedPrefsConfigUi(self, values_dict, userCancelled):
         try:
@@ -1004,6 +1051,26 @@ class Plugin(indigo.PluginBase):
     def validateDeviceConfigUi(self, values_dict, type_id, dev_id):
         if "ignore_no_ack" in values_dict and dev_id in self.globals[K_LIFX]:
             self.globals[K_LIFX][dev_id][K_IGNORE_NO_ACK] = bool(values_dict.get("ignore_no_ack", False))
+
+        lifx_mac_address = values_dict["mac_address"]
+        new_ip_address = values_dict["ip_address"]
+        try:
+            socket.inet_aton(new_ip_address)
+            pass  # Legal
+        except StandardError as standard_error:
+            check_error_message = u"illegal IP address string passed to inet_aton"
+            standard_error_message = u"{0}".format(standard_error)
+            self.logger.warning(u"CEM [{0}: {1}".format(len(check_error_message), check_error_message))
+            self.logger.warning(u"SEM[{0}: {1}".format(len(standard_error_message), standard_error_message))
+            if standard_error_message == check_error_message:
+                error_message = u"Update of IP Address to '{0}' rejected as IP address is invalid.".format(new_ip_address)
+            else:
+                error_message = (u"Update LIFX Lamp [{0}] IP Address to '{1}' failed with an error. Line '{2}' has error='{3}'"
+                                 .format(lifx_mac_address, new_ip_address, sys.exc_traceback.tb_lineno, standard_error_message))
+            error_dict = indigo.Dict()
+            error_dict['ip_address'] = error_message
+            error_dict['showAlertText'] = error_message
+            return False, values_dict, error_dict
 
         if "override_default_plugin_durations" in values_dict and values_dict["override_default_plugin_durations"]:
 
