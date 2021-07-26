@@ -61,7 +61,7 @@
         <Label>^ Specify the number of seconds between recovery attempts</Label>
     </Field>
     <Field type="checkbox" id="hide_recovery_messages" default="false" alwaysUseInDialogHeightCalc="true">
-        <Label>Recovery Nessages:</Label>
+        <Label>Recovery Messages:</Label>
         <Description>Check to hide recovery messages in Indigo log.</Description>
     </Field>
 
