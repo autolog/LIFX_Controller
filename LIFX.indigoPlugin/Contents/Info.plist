@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
 	<key>PluginVersion</key>
-	<string>6.1.3</string>
+	<string>6.1.4</string>
 	<key>ServerApiVersion</key>
 	<string>2.0</string>
 	<key>IwsApiVersion</key>
 	<string>1.0.0</string>
 	<key>CFBundleDisplayName</key>
-	<string>LIFX</string>2
+	<string>LIFX</string>
 	<key>CFBundleName</key>
 	<string>LIFX</string>
 	<key>CFBundleIdentifier</key>
