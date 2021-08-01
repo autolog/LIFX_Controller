@@ -1572,9 +1572,9 @@ class ThreadLifxlanHandler(threading.Thread):
                  "value": int(self.globals[K_LIFX][dev_id]["brightnessLevel"]),
                  "uiValue": str(self.globals[K_LIFX][dev_id]["brightnessLevel"])},
 
-                {"key": "whiteLevel",
-                 "value": int(self.globals[K_LIFX][dev_id]["brightnessLevel"]),
-                 "uiValue": str(self.globals[K_LIFX][dev_id]["brightnessLevel"])},
+                # {"key": "whiteLevel",
+                #  "value": int(self.globals[K_LIFX][dev_id]["brightnessLevel"]),
+                #  "uiValue": str(self.globals[K_LIFX][dev_id]["brightnessLevel"])},
 
                 {"key": "duration", "value": self.globals[K_LIFX][dev_id]["duration"]},
                 {"key": "duration_dim_brighten", "value": self.globals[K_LIFX][dev_id][K_DURATION_DIM_BRIGHTEN]},
@@ -1591,7 +1591,7 @@ class ThreadLifxlanHandler(threading.Thread):
                 keyValueList.append({"key": "blueLevel", "value": self.globals[K_LIFX][dev_id]["indigoBlue"]})
             if ("SupportsWhiteTemperature" in props) and props["SupportsWhiteTemperature"]:
                 keyValueList.append({"key": "whiteTemperature", "value": self.globals[K_LIFX][dev_id]["indigoKelvin"]})
-                keyValueList.append({"key": "whiteLevel", "value": self.globals[K_LIFX][dev_id]["indigoWhiteLevel"]})
+                keyValueList.append({"key": "whiteLevel", "value": int(self.globals[K_LIFX][dev_id]["brightnessLevel"])})
 
             dev.updateStatesOnServer(keyValueList)
 
