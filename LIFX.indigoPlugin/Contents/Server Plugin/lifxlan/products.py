@@ -40,6 +40,7 @@ product_map = {1: "LIFX Original 1000",
                66: "LIFX Mini White",
                68: "LIFX Candle",
                70: "LIFX Switch",
+               71: "LIFX Switch",
                81: "LIFX Candle White To Warm",
                82: "LIFX Filament Clear",
                85: "LIFX Filament Amber",
@@ -59,14 +60,18 @@ product_map = {1: "LIFX Original 1000",
                101: "LIFX Filament Amber",
                109: "LIFX A19 Night Vision",
                110: "LIFX BR30 Night Vision",
-               111: "LIFX A19 Night Vision"
+               111: "LIFX A19 Night Vision",
+               112: "LIFX BR30 Night Vision Intl",
+               113: "LIFX Mini WW US",
+               114: "LIFX Mini WW Intl",
+               None: "Unknown product"
                }
 
 # Identifies which products are lights.
-light_products = [1, 3, 10, 11, 15, 18, 19, 20, 22, 27, 28, 29, 30, 31, 32, 36, 37, 38, 39, 40, 43, 44, 45, 46, 49, 50, 51, 52, 53, 55, 57, 59, 60, 61, 62, 63, 64, 65, 66, 68, 81, 82, 85, 87, 88, 90, 91, 92, 93, 94, 96, 97, 98, 99, 100, 101, 109, 110, 111]
+light_products = [1, 3, 10, 11, 15, 18, 19, 20, 22, 27, 28, 29, 30, 31, 32, 36, 37, 38, 39, 40, 43, 44, 45, 46, 49, 50, 51, 52, 53, 55, 57, 59, 60, 61, 62, 63, 64, 65, 66, 68, 81, 82, 85, 87, 88, 90, 91, 92, 93, 94, 96, 97, 98, 99, 100, 101, 109, 110, 111, 112, 113, 114]
 
 # Identifies which products are switches.
-switch_products = [70, 89]
+switch_products = [70, 71, 89]
 
 features_map = {1: {                    # LIFX Original 1000
                     "color": True,
@@ -560,6 +565,18 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": True,
                     "buttons": True},
+                71: {                    # LIFX Switch
+                    "color": False,
+                    "temperature": False,
+                    "infrared": False,
+                    "multizone": False,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": None,
+                    "max_kelvin": None,
+                    "hev": False,
+                    "relays": True,
+                    "buttons": True},
                 81: {                    # LIFX Candle White To Warm
                     "color": False,
                     "temperature": True,
@@ -799,5 +816,53 @@ features_map = {1: {                    # LIFX Original 1000
                     "max_kelvin": 9000,
                     "hev": False,
                     "relays": False,
+                    "buttons": False},
+                112: {  # LIFX BR30 Night Vision Intl
+                    "color": True,
+                    "temperature": True,
+                    "infrared": True,
+                    "multizone": False,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+                113: {  # LIFX Mini WW US
+                    "color": False,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": False,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+                114: {  # LIFX Mini WW Intl
+                    "color": False,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": False,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+                None: {  # Default answer for unknown product
+                    "color": False,
+                    "temperature": False,
+                    "infrared": False,
+                    "multizone": False,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 2700,
+                    "max_kelvin": 2700,
+                    "hev": False,
+                    "relays": False,
                     "buttons": False}
-                }
+}

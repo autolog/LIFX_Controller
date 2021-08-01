@@ -221,6 +221,7 @@ class ThreadDiscovery(threading.Thread):
             number_of_lifx_devices_detected = len(lifxlan_devices)
 
             max_len_label = 0
+            max_len_ip_address = 0
             number_of_lifx_devices_discovered = 0
             for lifx_device in lifxlan_devices:
                 try:
@@ -240,6 +241,11 @@ class ThreadDiscovery(threading.Thread):
                 if len(lifx_label) > max_len_label:
                     max_len_label = len(lifx_label)
 
+                lifx_ip_address = str(lifx_device.ip_addr).rstrip()
+                if len(lifx_ip_address) > max_len_ip_address:
+                    max_len_ip_address = len(lifx_ip_address)
+
+
                 number_of_lifx_devices_discovered += 1
 
                 self.d_logger.debug(u"FEATURES: {0} - [{1}\n{2}\n".format(str(lifx_device.label).rstrip(), lifx_device.product, lifx_device.product_features))
@@ -252,7 +258,8 @@ class ThreadDiscovery(threading.Thread):
                 discoveryMessage = (u"{0} {1} LIFX device(s) have been detected and {2} LIFX device(s) fully discovered as follows:\n"
                                     .format(discoveryMessage, number_of_lifx_devices_detected, number_of_lifx_devices_discovered))
 
-            max_len_label += 2  # Adjust length to takae accout of enclosing single quotes (see below)
+            max_len_label += 2  # Adjust length to take account of enclosing single quotes (see below)
+            max_len_ip_address += 3  # Adjust length to take account of enclosing single quotes and full-stop (see below)
 
             discoveryMessage = u"{0}\nStart of discovered LIFX devices list ---->\n".format(discoveryMessage)
 
@@ -260,8 +267,11 @@ class ThreadDiscovery(threading.Thread):
             for lifx_key, lifx_value in self.globals[K_DISCOVERY].items():
                 lifx_mac_address = lifx_key
                 lifx_label = (u"'{0}'".format(lifx_value[K_LABEL])).ljust(max_len_label)
-                lifx_ip_address = lifx_value[K_IP_ADDRESS]
-                discovery_lines.append(u"  {0} [{1}] at {2}\n".format(lifx_label, lifx_mac_address, lifx_ip_address))
+                lifx_ip_address = (u"'{0}'.".format(lifx_value[K_IP_ADDRESS])).ljust(max_len_ip_address)
+                # lifx_ip_address = lifx_value[K_IP_ADDRESS]
+                lifx_product = lifx_value[K_PRODUCT]
+                lifx_product_name = lifx_value[K_PRODUCT_NAME]
+                discovery_lines.append(u"  {0} [MAC {1}] at IP {2} Product {3}: {4}\n".format(lifx_label, lifx_mac_address, lifx_ip_address,  lifx_product, lifx_product_name))
             discovery_lines.sort()
 
             for discovery_line in discovery_lines:
@@ -302,6 +312,7 @@ class ThreadDiscovery(threading.Thread):
                 lifx_label = lifx_value[K_LABEL]
                 lifx_ip_address = lifx_value[K_IP_ADDRESS]
                 lifx_indigo_device_id = lifx_value[K_INDIGO_DEVICE_ID]
+                lifx_product = lifx_value[K_PRODUCT]
                 lifx_product_name = lifx_value[K_PRODUCT_NAME]
                 lifx_product_features = lifx_value[K_PRODUCT_FEATURES]
                 lifx_product_feature_color = lifx_product_features["color"]
