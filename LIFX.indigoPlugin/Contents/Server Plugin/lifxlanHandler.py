@@ -249,8 +249,8 @@ class ThreadLifxlanHandler(threading.Thread):
                 dev.updateStateOnServer(key="connected", value=self.globals[K_LIFX][dev_id][K_CONNECTED])
                 dev.updateStateOnServer(key="onOffState", value=False)
                 dev.updateStateOnServer(key="brightnessLevel", value=0)
-                self.lh_logger.error(u"No acknowledgement received from '{0}' when attempting a '{1}' command."
-                                     .format(dev.name, lifx_command))
+                self.lh_logger.warning(u"No acknowledgement received from '{0}' when attempting a '{1}' command."
+                                       .format(dev.name, lifx_command))
 
             if dev_id not in self.globals[K_RECOVERY]:
                 self.globals[K_RECOVERY][dev_id] = dict()
@@ -362,7 +362,6 @@ class ThreadLifxlanHandler(threading.Thread):
         except StandardError as standard_error_message:
             self.lh_logger.error(u"StandardError detected in 'update_status_from_message'. Line {0} has error: {1}"
                                  .format(sys.exc_traceback.tb_lineno, standard_error_message))
-
 
     def handle_timer_recovery_delay(self, parameter):
         try:
