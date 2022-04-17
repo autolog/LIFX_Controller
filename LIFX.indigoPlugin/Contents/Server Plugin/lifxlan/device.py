@@ -39,7 +39,9 @@ VERBOSE = False
 
 def get_broadcast_addrs():
     broadcast_addrs = []
-    broadcast_addrs.append("255.255.255.255")
+    # broadcast_addrs.append("255.255.255.255")
+    broadcast_addrs.append("192.168.0.255")
+    broadcast_addrs.append("192.168.1.255")
     return broadcast_addrs
 
 UDP_BROADCAST_IP_ADDRS = get_broadcast_addrs()
@@ -523,6 +525,7 @@ class Device(object):
             attempts += 1
         if not success:
             self.close_socket(socket_id)
+            # TODO: Modified by @autolog - added '.__name__" to 'response_type' and 'msg_type'
             raise WorkflowException("WorkflowException: Did not receive {} from {} (Name: {}) in response to {}".format(str(response_type), str(self.mac_addr), str(self.label), str(msg_type)))
         else:
             self.close_socket(socket_id)

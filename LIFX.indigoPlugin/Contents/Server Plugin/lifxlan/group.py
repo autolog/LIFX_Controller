@@ -191,7 +191,8 @@ class Group(object):
         # "simultaneous" change
         threads = []
         for d in multizone_devices:
-            t = Thread(target = d.set_zone_colors, args = (colors, duration, rapid, apply))
+            # t = Thread(target = d.set_zone_colors, args = (colors, duration, rapid, apply))
+            t = Thread(target = d.set_zone_colors, args = (colors, duration, rapid))  # TODO: Not changed by Autolog on 23-Jan-2022
             threads.append(t)
             t.start()
         for t in threads:

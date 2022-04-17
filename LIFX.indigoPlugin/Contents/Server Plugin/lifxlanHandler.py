@@ -1,16 +1,17 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# LIFX V6 Controller - Send & Receive Messages © Autolog 2020
+# LIFX V7 Controller © Autolog 2020-2022
 #
 
 # noinspection PyUnresolvedReferences
 # ============================== Native Imports ===============================
 import colorsys
 import locale
-import Queue
+import queue
 import sys
 import threading
+import traceback
 
 # ============================== Custom Imports ===============================
 try:
@@ -25,27 +26,56 @@ from lifxlan.lifxlan import *
 
 # ============================== Static Methods ===============================
 def calculate_brightness_level_from_sv(arg_saturation, arg_brightness):
-    # arguments Saturation and Brightness are (float) values 0.0 to 100.0
-    saturation = arg_saturation
-    if saturation == 0.0:
-        saturation = 1.0
-    brightness_level = (arg_brightness / 2.0) + ((100 - saturation) / 2)
+    try:
+        # arguments Saturation and Brightness are (float) values 0.0 to 100.0
+        #
+        # Either returns:
+        #  a list [True, Brightness Level] if all OK
+        # else:
+        #  a list [False, Error Log Message]
 
-    return float(brightness_level)
+        saturation = arg_saturation
+        if saturation == 0.0:
+            saturation = 1.0
+        brightness_level = (arg_brightness / 2.0) + ((100 - saturation) / 2)
+        return [True, float(brightness_level)]
+
+    except Exception as exception_error:
+        filename, line_number, method, statement = traceback.extract_tb(sys.exc_info()[2])[-1]
+        module = filename.split('/')
+        log_message = f"'{exception_error}' in module '{module[-1]}', method '{method}'\n   Failing statement [line {line_number}]: '{statement}'"
+        return [False, log_message]
 
 
-def set_hsbk(hue, saturation, brightness, kelvin):
+def set_hsbk(dev, hue, saturation, brightness, kelvin):
     # This method ensures that the HSBK values being passed to lifxlan are valid
-    hue = hue if hue > 0 else 0
-    hue = hue if hue <= 65535 else 65535
-    saturation = saturation if saturation > 0 else 0
-    saturation = saturation if saturation <= 65535 else 65535
-    brightness = brightness if brightness > 0 else 0
-    brightness = brightness if brightness <= 65535 else 65535
-    kelvin = kelvin if kelvin > 2500 else 2500
-    kelvin = kelvin if kelvin <= 9000 else 9000
+    #
+    # Either returns:
+    #  a list [True, hue, saturation, brightness, kelvin] if all OK
+    # else:
+    #  a list [False, Error Log Message]
 
-    return hue, saturation, brightness, kelvin
+    try:
+        lifx_props = dev.pluginProps
+        kelvin_min = int(lifx_props.get("WhiteTemperatureMin", 2500))
+        kelvin_max = int(lifx_props.get("WhiteTemperatureMax", 2500))
+
+        hue = hue if hue > 0 else 0
+        hue = hue if hue <= 65535 else 65535
+        saturation = saturation if saturation > 0 else 0
+        saturation = saturation if saturation <= 65535 else 65535
+        brightness = brightness if brightness > 0 else 0
+        brightness = brightness if brightness <= 65535 else 65535
+        kelvin = kelvin if kelvin > kelvin_min else kelvin_min
+        kelvin = kelvin if kelvin < kelvin_max else kelvin_max
+
+        return [True, hue, saturation, brightness, kelvin]
+
+    except Exception as exception_error:
+        filename, line_number, method, statement = traceback.extract_tb(sys.exc_info()[2])[-1]
+        module = filename.split('/')
+        log_message = f"'{exception_error}' in module '{module[-1]}', method '{method}'\n   Failing statement [line {line_number}]: '{statement}'"
+        return [False, log_message]
 
 
 # noinspection PyUnresolvedReferences,PyPep8Naming
@@ -61,7 +91,7 @@ class ThreadLifxlanHandler(threading.Thread):
         self.globals = pluginGlobals
 
         self.lh_logger = logging.getLogger("Plugin.LIFX_HANDLER")
-        self.lh_logger.debug(u"Debugging LIFX Handler Thread")
+        self.lh_logger.debug("Debugging LIFX Handler Thread")
 
         self.lifx_discovered_devices_mapping = dict()
 
@@ -69,12 +99,26 @@ class ThreadLifxlanHandler(threading.Thread):
 
         self.lifxlan = None
 
+    def __del__(self):
+
+        indigo.PluginBase.__del__(self)
+
+    def exception_handler(self, exception_error_message, log_failing_statement):
+        filename, line_number, method, statement = traceback.extract_tb(sys.exc_info()[2])[-1]
+        module = filename.split('/')
+        log_message = f"'{exception_error_message}' in module '{module[-1]}', method '{method}'"
+        if log_failing_statement:
+            log_message = log_message + f"\n   Failing statement [line {line_number}]: '{statement}'"
+        else:
+            log_message = log_message + f" at line {line_number}"
+        self.lh_logger.error(log_message)
+
     def run(self):
         try:
             # Initialise the LIFX Lamps on startup
             # self.globals[K_QUEUES][K_LIFXLAN_HANDLER][K_QUEUE].put([QUEUE_PRIORITY_INIT_DISCOVERY, CMD_DISCOVERY, None, None])
 
-            self.lh_logger.debug(u"LIFXLAN Handler Thread initialised")
+            self.lh_logger.debug("LIFXLAN Handler Thread initialised")
 
             while not self.thread_stop.is_set():
                 try:
@@ -90,11 +134,10 @@ class ThreadLifxlanHandler(threading.Thread):
 
                     # Debug info to log
                     if dev_id is not None:
-                        debug_dev_info = u"for device '{0}' ".format(indigo.devices[dev_id].name)
+                        debug_dev_info = f"for device '{indigo.devices[dev_id].name}' "
                     else:
                         debug_dev_info = ""
-                    self.lh_logger.debug(u"Dequeued lifxlanHandler Command '{0}' {1} to process with priority: {2}"
-                                         .format(CMD_TRANSLATION[lifx_command], debug_dev_info, lifx_queue_priority))
+                    self.lh_logger.debug(f"Dequeued lifxlanHandler Command '{CMD_TRANSLATION[lifx_command]}' {debug_dev_info} to process with priority: {lifx_queue_priority}")
 
                     if lifx_command == CMD_STOP_THREAD:
                         break  # Exit While loop and quit thread
@@ -119,7 +162,7 @@ class ThreadLifxlanHandler(threading.Thread):
                     self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_CURRENT] = lifx_command
 
                     if K_LIFX_DEVICE not in self.globals[K_LIFX][dev_id]:
-                        self.lh_logger.debug(u"Indigo LIFX device '{0}' not yet set-up".format(dev.name))
+                        self.lh_logger.debug(f"Indigo LIFX device '{dev.name}' not yet set-up")
                         return
 
                     if self.globals[K_LIFX][dev_id][K_LIFX_DEVICE] is None:
@@ -212,34 +255,43 @@ class ThreadLifxlanHandler(threading.Thread):
                     elif lifx_command == CMD_GET_INFO:
                         self.process_get_info(lifx_command, dev, lifx_command_arguments)
 
-                except Queue.Empty:
+                except queue.Empty:
                     pass
-                except StandardError as standard_error_message:
-                    self.lh_logger.error(u"StandardError detected communicating with LIFX lamp."
-                                         u" Line {0} has error: {1}"
-                                         .format(sys.exc_traceback.tb_lineno, standard_error_message))
+                except Exception as exception_error:
+                    self.exception_handler(exception_error, True)  # Log error and display failing statement
 
-        except StandardError as standard_error_message:
-            self.lh_logger.error(u"StandardError detected in LIFX Send Receive Message Thread. Line {0} has error: {1}"
-                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
-        self.lh_logger.debug(u"LIFX Send Receive Message Thread ended.")
+        self.lh_logger.debug("LIFX Send Receive Message Thread ended.")
 
     def clear_brighten_by_timer_timer(self, dev):
-        if dev.id in self.globals[K_DEVICE_TIMERS] and 'BRIGHTEN_BY_TIMER' in self.globals[K_DEVICE_TIMERS][dev.id]:
-            self.globals[K_DEVICE_TIMERS][dev.id]["BRIGHTEN_BY_TIMER"].cancel()
+        try:
+            if dev.id in self.globals[K_DEVICE_TIMERS] and 'BRIGHTEN_BY_TIMER' in self.globals[K_DEVICE_TIMERS][dev.id]:
+                self.globals[K_DEVICE_TIMERS][dev.id]["BRIGHTEN_BY_TIMER"].cancel()
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def clear_dim_by_timer_timer(self, dev):
-        if dev.id in self.globals[K_DEVICE_TIMERS] and "DIM_BY_TIMER" in self.globals[K_DEVICE_TIMERS][dev.id]:
-            self.globals[K_DEVICE_TIMERS][dev.id]["DIM_BY_TIMER"].cancel()
+        try:
+            if dev.id in self.globals[K_DEVICE_TIMERS] and "DIM_BY_TIMER" in self.globals[K_DEVICE_TIMERS][dev.id]:
+                self.globals[K_DEVICE_TIMERS][dev.id]["DIM_BY_TIMER"].cancel()
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def clear_status_timer(self, dev):
-        if dev.id in self.globals[K_DEVICE_TIMERS] and 'STATUS' in self.globals[K_DEVICE_TIMERS][dev.id]:
-            self.globals[K_DEVICE_TIMERS][dev.id][K_STATUS].cancel()
+        try:
+            if dev.id in self.globals[K_DEVICE_TIMERS] and 'STATUS' in self.globals[K_DEVICE_TIMERS][dev.id]:
+                self.globals[K_DEVICE_TIMERS][dev.id][K_STATUS].cancel()
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def clear_waveform_off_timer(self, dev):
-        if 'WAVEFORM_OFF' in self.globals[K_DEVICE_TIMERS][dev.id]:
-            self.globals[K_DEVICE_TIMERS][dev.id]["WAVEFORM_OFF"].cancel()
+        try:
+            if 'WAVEFORM_OFF' in self.globals[K_DEVICE_TIMERS][dev.id]:
+                self.globals[K_DEVICE_TIMERS][dev.id]["WAVEFORM_OFF"].cancel()
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def communication_lost(self, dev_id, lifx_command):
         try:
@@ -249,8 +301,7 @@ class ThreadLifxlanHandler(threading.Thread):
                 dev.updateStateOnServer(key="connected", value=self.globals[K_LIFX][dev_id][K_CONNECTED])
                 dev.updateStateOnServer(key="onOffState", value=False)
                 dev.updateStateOnServer(key="brightnessLevel", value=0)
-                self.lh_logger.warning(u"No acknowledgement received from '{0}' when attempting a '{1}' command."
-                                       .format(dev.name, lifx_command))
+                self.lh_logger.warning(f"No acknowledgement received from '{dev.name}' when attempting a '{lifx_command}' command.")
 
             if dev_id not in self.globals[K_RECOVERY]:
                 self.globals[K_RECOVERY][dev_id] = dict()
@@ -259,42 +310,38 @@ class ThreadLifxlanHandler(threading.Thread):
 
             if self.globals[K_RECOVERY][dev_id][K_ATTEMPTS] >= self.globals[K_PLUGIN_CONFIG_DEFAULT][K_RECOVERY_ATTEMPTS_LIMIT]:
                 if self.globals[K_RECOVERY][dev_id][K_ATTEMPTS] == self.globals[K_PLUGIN_CONFIG_DEFAULT][K_RECOVERY_ATTEMPTS_LIMIT]:
-                    self.lh_logger.error(u"Unable to communicate with LIFX device '{0}' - Retry limit reached."
-                                         .format(indigo.devices[dev_id].name))
+                    self.lh_logger.error(f"Unable to communicate with LIFX device '{indigo.devices[dev_id].name}' - Retry limit reached.")
                 self.handle_no_ack_status(dev)
             else:
                 total_recovery_attempts = int(dev.states["total_recovery_attempts"])
                 total_recovery_attempts += 1
                 dev.updateStateOnServer(key="total_recovery_attempts", value=total_recovery_attempts)
                 if not self.globals[K_PLUGIN_CONFIG_DEFAULT][K_HIDE_RECOVERY_MESSAGES]:
-                    self.lh_logger.warning(u"Unable to communicate with LIFX device '{0}'. Retrying: Attempt {1}"
-                                           .format(indigo.devices[dev_id].name, self.globals[K_RECOVERY][dev_id][K_ATTEMPTS]))
+                    self.lh_logger.warning(f"Unable to communicate with LIFX device '{indigo.devices[dev_id].name}'. Retrying: Attempt {self.globals[K_RECOVERY][dev_id][K_ATTEMPTS]}")
 
                 try:
                     if dev_id in self.globals[K_RECOVERY_TIMERS]:
                         self.globals[K_RECOVERY_TIMERS][dev_id].cancel()
                         del self.globals[K_RECOVERY_TIMERS][dev_id]
-                except StandardError:
+                except Exception:
                     pass
 
                 self.globals[K_RECOVERY_TIMERS][dev_id] = threading.Timer(self.globals[K_PLUGIN_CONFIG_DEFAULT][K_RECOVERY_FREQUENCY],
                                                                           self.handle_timer_recovery_delay, [dev_id])
                 self.globals[K_RECOVERY_TIMERS][dev_id].start()
-                dev.setErrorStateOnServer(u"recovery active [{0}]".format(self.globals[K_RECOVERY][dev_id][K_ATTEMPTS]))
+                dev.setErrorStateOnServer(f"recovery active [{self.globals[K_RECOVERY][dev_id][K_ATTEMPTS]}]")
 
-        except StandardError as standard_error_message:
-            self.lh_logger.error(u"'communication_lost' error detected. Line {0} has error: {1}"
-                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def communication_ok(self, dev_id, lifx_command):
         try:
             dev = indigo.devices[dev_id]
             if dev_id in self.globals[K_RECOVERY]:
                 if self.globals[K_RECOVERY][dev_id][K_ATTEMPTS] >= self.globals[K_PLUGIN_CONFIG_DEFAULT][K_RECOVERY_ATTEMPTS_LIMIT]:
-                    self.lh_logger.info(u"Re-established contact with LIFX device '{0}'".format(indigo.devices[dev_id].name))
+                    self.lh_logger.info(f"Re-established contact with LIFX device '{indigo.devices[dev_id].name}'")
                 elif self.globals[K_RECOVERY][dev_id][K_ATTEMPTS] > 0:
-                    self.lh_logger.info(u"Re-established contact with LIFX device '{0}' after {1} recovery attempt(s)"
-                                        .format(indigo.devices[dev_id].name, self.globals[K_RECOVERY][dev_id][K_ATTEMPTS]))
+                    self.lh_logger.info(f"Re-established contact with LIFX device '{indigo.devices[dev_id].name}' after {self.globals[K_RECOVERY][dev_id][K_ATTEMPTS]} recovery attempt(s)")
                 del self.globals[K_RECOVERY][dev_id]
                 # dev.updateStateOnServer(key="no_ack_state", value=False)
                 self.globals[K_LIFX][dev_id][K_CONNECTED] = True
@@ -303,9 +350,8 @@ class ThreadLifxlanHandler(threading.Thread):
                 total_successful_recoveries += 1
                 dev.updateStateOnServer(key="total_successful_recoveries", value=total_successful_recoveries)
 
-        except StandardError as standard_error_message:
-            self.lh_logger.error(u"'communication_ok' error detected. Line {0} has error: {1}"
-                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def get_color(self, dev_id, argLifxLanLightObject):
 
@@ -315,35 +361,40 @@ class ThreadLifxlanHandler(threading.Thread):
 
         try:
             lifx_command = 'get_color'
-
-            try:
-                hsbk = argLifxLanLightObject.get_color()
-                power = argLifxLanLightObject.power_level
+            try:  # To intercept LIFXLan workflow exceptions
+                hsbk = argLifxLanLightObject.get_color()  # Invoke LIFXLan to get color from Lamp
+                power = argLifxLanLightObject.power_level  # Invoke LIFXLan to get power level from Lamp
                 status = True
-                self.communication_ok(dev_id, lifx_command)
-            except (StandardError, WorkflowException):
-                self.communication_lost(dev_id, lifx_command)
+                self.communication_ok(dev_id, lifx_command)  # Signify communication OK
+            except WorkflowException:
+                self.communication_lost(dev_id, lifx_command)  # Signify communication Lost
 
-        except StandardError as standard_error_message:
-            dev = indigo.devices[dev_id]
-            self.lh_logger.error(u"Error detected in 'get_color' for LIFX device '{0}'. Line {1} has error: {2}"
-                                 .format(dev.name, sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
         finally:
             return status, power, hsbk
 
     def get_infrared(self, dev_id, argLifxLanLightObject):
-        lifx_command = 'get_infrared'
+
+        status = False
+        infraredBrightness = 0
+
         try:
-            infraredBrightness = argLifxLanLightObject.get_infrared()
-            status = True
-            self.communication_ok(dev_id, lifx_command)
-        except (StandardError, WorkflowException, IOError) as error:
-            self.lh_logger.debug(u"'get_infrared' error detected for '{0}' = {1}".format(indigo.devices[dev_id].name, error))
-            status = False
-            infraredBrightness = 0
-            self.communication_lost(dev_id, lifx_command)
-        return status, infraredBrightness
+            lifx_command = 'get_infrared'
+            try:  # To intercept LIFXLan workflow exceptions and IOError
+                infraredBrightness = argLifxLanLightObject.get_infrared()
+                status = True
+                self.communication_ok(dev_id, lifx_command)
+            except (WorkflowException, IOError) as error:
+                self.lh_logger.debug(f"'get_infrared' error detected for '{indigo.devices[dev_id].name}' = {error}")
+                self.communication_lost(dev_id, lifx_command)
+
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
+
+        finally:
+            return status, infraredBrightness
 
     def handle_no_ack_status(self, dev):
         try:
@@ -351,38 +402,34 @@ class ThreadLifxlanHandler(threading.Thread):
             if self.globals[K_LIFX][dev_id][K_IGNORE_NO_ACK]:
                 dev.updateStateImageOnServer(indigo.kStateImageSel.PowerOff)
                 dev.updateStateOnServer(key="onOffState", value=False, clearErrorState=True)
-                dev.updateStateOnServer(key="brightnessLevel", value=0, uiValue=u"0")
+                dev.updateStateOnServer(key="brightnessLevel", value=0, uiValue="0")
             else:
-                dev.setErrorStateOnServer(u"no ack")  # Default to 'no ack' status
+                dev.setErrorStateOnServer("no ack")  # Default to 'no ack' status
 
             total_no_ack_events = int(dev.states["total_no_ack_events"])
             total_no_ack_events += 1
             dev.updateStateOnServer(key="total_no_ack_events", value=total_no_ack_events)
 
-        except StandardError as standard_error_message:
-            self.lh_logger.error(u"StandardError detected in 'update_status_from_message'. Line {0} has error: {1}"
-                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def handle_timer_recovery_delay(self, parameter):
         try:
             dev_id = parameter
             dev = indigo.devices[dev_id]
 
-            self.lh_logger.debug(u"Timer for {0} [{1}] invoked for recovery queued Status command"
-                                 .format(dev.name, dev.address))
+            self.lh_logger.debug(f"Timer for {dev.name} [{dev.address}] invoked for recovery queued Status command")
             try:
                 if dev_id in self.globals[K_RECOVERY_TIMERS]:
                     self.globals[K_RECOVERY_TIMERS][dev_id].cancel()
                 del self.globals[K_RECOVERY_TIMERS][dev_id]
-            except StandardError:
+            except Exception:
                 pass
 
             self.globals[K_QUEUES][K_LIFXLAN_HANDLER][K_QUEUE].put([QUEUE_PRIORITY_STATUS_HIGH, CMD_STATUS, dev_id, None])
 
-        except StandardError as standard_error_message:
-            self.lh_logger.error(u"'handle_timer_recovery_delay' error detected."
-                                 u" Line {0} has error: {1}"
-                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def handle_timer_repeating_queued_brighten_by_timer_command(self, parameters):
         try:
@@ -392,9 +439,7 @@ class ThreadLifxlanHandler(threading.Thread):
             amountToBrightenDimBy = parameters[2]
             timerInterval = parameters[3]
 
-            self.lh_logger.debug(
-                u"Timer for {0} [{1}] invoked for repeating queued message BRIGHTEN_BY_TIMER. Stop = {2}".format(
-                    dev.name, dev.address, self.globals[K_LIFX][dev_id][K_STOP_REPEAT_BRIGHTEN]))
+            self.lh_logger.debug(f"Timer for {dev.name} [{dev.address}] invoked for repeating queued message BRIGHTEN_BY_TIMER. Stop = {self.globals[K_LIFX][dev_id][K_STOP_REPEAT_BRIGHTEN]}")
 
             try:
                 del self.globals[K_DEVICE_TIMERS][dev_id]["BRIGHTEN_BY_TIMER"]
@@ -406,10 +451,8 @@ class ThreadLifxlanHandler(threading.Thread):
                     [QUEUE_PRIORITY_COMMAND_MEDIUM, CMD_REPEAT_BRIGHTEN_BY_TIMER, dev.id,
                      [option, amountToBrightenDimBy, timerInterval]])
 
-        except StandardError as standard_error_message:
-            self.lh_logger.error(
-                u"'handle_timer_repeating_queued_brighten_by_timer_command' error detected. Line {0} has error: {1}".format(
-                    sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def handle_timer_repeating_queued_dim_by_timer_command(self, parameters):
         try:
@@ -419,8 +462,7 @@ class ThreadLifxlanHandler(threading.Thread):
             amountToBrightenDimBy = parameters[2]
             timerInterval = parameters[3]
 
-            self.lh_logger.debug(u"Timer for {0} [{1}] invoked for repeating queued message DIM_BY_TIMER. Stop = {2}"
-                                 .format(dev.name, dev.address, self.globals[K_LIFX][dev_id][K_STOP_REPEAT_DIM]))
+            self.lh_logger.debug(f"Timer for {dev.name} [{dev.address}] invoked for repeating queued message DIM_BY_TIMER. Stop = {self.globals[K_LIFX][dev_id][K_STOP_REPEAT_DIM]}")
 
             try:
                 del self.globals[K_DEVICE_TIMERS][dev_id]["DIM_BY_TIMER"]
@@ -434,15 +476,12 @@ class ThreadLifxlanHandler(threading.Thread):
                      dev_id,
                      [option, amountToBrightenDimBy, timerInterval]])
 
-        except StandardError as standard_error_message:
-            self.lh_logger.error(u"handle_timer_repeating_queued_dim_by_timer_command error detected."
-                                 u" Line {0} has error: {1}"
-                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def handle_timer_repeating_queued_status_command(self, dev, seconds):
         try:
-            self.lh_logger.debug(u"Timer for {0} [{1}] invoked for repeating queued message STATUS - {2} seconds left"
-                                 .format(dev.name, dev.address, seconds))
+            self.lh_logger.debug(f"Timer for {dev.name} [{dev.address}] invoked for repeating queued message STATUS - {seconds} seconds left")
 
             try:
                 del self.globals[K_DEVICE_TIMERS][dev.id][K_STATUS]
@@ -457,15 +496,12 @@ class ThreadLifxlanHandler(threading.Thread):
                     threading.Timer(1.0, self.handle_timer_repeating_queued_status_command, [dev, seconds])
                 self.globals[K_DEVICE_TIMERS][dev.id][K_STATUS].start()
 
-        except StandardError as standard_error_message:
-            self.lh_logger.error(u"handle_timer_repeating_queued_status_command error detected."
-                                 u" Line {0} has error: {1}"
-                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def handle_timer_waveform_off_command(self, dev):
         try:
-            self.lh_logger.debug(u"Timer for {0} [{1}] invoked to turn off LIFX device (Used by Waveform)"
-                                 .format(dev.name, dev.address))
+            self.lh_logger.debug(f"Timer for {dev.name} [{dev.address}] invoked to turn off LIFX device (Used by Waveform)")
 
             try:
                 del self.globals[K_DEVICE_TIMERS][dev.id]["WAVEFORM_OFF"]
@@ -474,9 +510,8 @@ class ThreadLifxlanHandler(threading.Thread):
 
             self.globals[K_QUEUES][K_LIFXLAN_HANDLER][K_QUEUE].put([QUEUE_PRIORITY_STATUS_HIGH, CMD_WAVEFORM_OFF, dev.id, None])
 
-        except StandardError as standard_error_message:
-            self.lh_logger.error(u"'handle_timer_waveform_off_command' error detected. Line {0} has error: {1}"
-                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def process_brighten_by_timer(self, lifx_command, dev, lifx_command_arguments):
         try:
@@ -505,11 +540,10 @@ class ThreadLifxlanHandler(threading.Thread):
                     self.globals[K_DEVICE_TIMERS][dev_id]["BRIGHTEN_BY_TIMER"].start()
                 else:
                     self.globals[K_LIFX][dev_id][K_STOP_REPEAT_BRIGHTEN] = True
-                    self.lh_logger.info(u"\"{0}\" {1}".format(dev.name, "brightened to 100%"))
+                    self.lh_logger.info(f"\"{dev.name}\" {'brightened to 100%'}")
 
-        except StandardError as standard_error_message:
-            self.lh_logger.error(u"StandardError detected in 'process_brighten_by_timer'. Line {0} has error: {1}"
-                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def process_color(self, lifx_command, dev, lifx_command_arguments):
         try:
@@ -525,34 +559,36 @@ class ThreadLifxlanHandler(threading.Thread):
             self.clear_status_timer(dev)
 
             lifx_io_ok, power, hsbk = self.get_color(dev_id, self.globals[K_LIFX][dev_id][K_LIFX_DEVICE])
-            self.lh_logger.debug(u"LIFX COMMAND [COLOR] lifx_io_ok for {0} =  {1}, HSBK = {2}"
-                                 .format(indigo.devices[dev_id].name, lifx_io_ok, hsbk))
+            self.lh_logger.debug(f"LIFX COMMAND [COLOR] lifx_io_ok for {indigo.devices[dev_id].name} =  {lifx_io_ok}, HSBK = {hsbk}")
             if lifx_io_ok:
                 hue = hsbk[0]
                 saturation = hsbk[1]
                 brightness = hsbk[2]
                 kelvin = hsbk[3]
 
-                self.lh_logger.debug(u"LIFX COMMAND [COLOR]; GET-COLOR for {0}:"
-                                     u" Hue={1}, Saturation={2}, Brightness={3}, Kelvin={4}"
-                                     .format(indigo.devices[dev_id].name, hue, saturation, brightness, kelvin))
+                self.lh_logger.debug(f"LIFX COMMAND [COLOR]; GET-COLOR for {indigo.devices[dev_id].name}: Hue={hue}, Saturation={saturation}, Brightness={brightness}, Kelvin={kelvin}")
 
                 if power == 0 and self.globals[K_LIFX][dev_id]["turn_on_if_off"]:
                     # Need to reset existing brightness to 0 before turning on
                     try:
-                        hsbkWithBrightnessZero = set_hsbk(hue, saturation, 0, kelvin)
-                        self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_color(
-                            hsbkWithBrightnessZero, 0)
+                        hsbkWithBrightnessZero = set_hsbk(dev, hue, saturation, 0, kelvin)
+                        if hsbkWithBrightnessZero[0]:
+                            del hsbkWithBrightnessZero[0]
+                        else:
+                            self.lh_logger.error(hsbkWithBrightnessZero[1])
+                            return
+
+                        self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_color(hsbkWithBrightnessZero, 0)
                         self.communication_ok(dev_id, lifx_command)
-                    except (StandardError, WorkflowException, IOError) as error:
-                        self.communication_lost(dev_id, 'set_color')
+                    except (WorkflowException, IOError):
+                        self.communication_lost(dev_id, 'turn_on_if_off')
                         return
                     # Need to turn on LIFX device as currently off
                     power = 65535
                     try:
                         self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_power(power, 0)
                         self.communication_ok(dev_id, lifx_command)
-                    except (StandardError, WorkflowException, IOError) as error:
+                    except (WorkflowException, IOError):
                         self.communication_lost(dev_id, 'set_power')
                         return
 
@@ -561,16 +597,19 @@ class ThreadLifxlanHandler(threading.Thread):
                 brightness = targetBrightness
                 duration = int(self.globals[K_LIFX][dev_id][K_DURATION_COLOR_WHITE] * 1000)
 
-                self.lh_logger.debug(u"LIFX COMMAND [COLOR]; SET-COLOR for {0}:"
-                                     u" Hue={1}, Saturation={2}, Brightness={3}, Kelvin={4}, Duration={5}"
-                                     .format(indigo.devices[dev_id].name, hue, saturation,
-                                             brightness, kelvin, duration))
+                self.lh_logger.debug(
+                    f"LIFX COMMAND [COLOR]; SET-COLOR for {indigo.devices[dev_id].name}: Hue={hue}, Saturation={saturation}, Brightness={brightness}, Kelvin={kelvin}, Duration={duration}")
 
                 try:
-                    hsbk = set_hsbk(hue, saturation, brightness, kelvin)
+                    hsbk = set_hsbk(dev, hue, saturation, brightness, kelvin)
+                    if hsbk[0]:
+                        del hsbk[0]
+                    else:
+                        self.lh_logger.error(hsbk[1])
+                        return
                     self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_color(hsbk, duration)
                     self.communication_ok(dev_id, lifx_command)
-                except (StandardError, WorkflowException, IOError) as error:
+                except (WorkflowException, IOError):
                     self.communication_lost(dev_id, 'set_color')
                     return
 
@@ -584,9 +623,8 @@ class ThreadLifxlanHandler(threading.Thread):
 
             self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = lifx_command
 
-        except StandardError as standard_error_message:
-            self.lh_logger.error(u"StandardError detected in 'process_color'. Line {0} has error: {1}"
-                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def process_dim_brighten_brightness(self, lifx_command, dev, lifx_command_arguments):
         try:
@@ -610,17 +648,23 @@ class ThreadLifxlanHandler(threading.Thread):
                 try:
                     self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_power(powerLevel, 0)
                     self.communication_ok(dev_id, lifx_command)
-                except (StandardError, WorkflowException, IOError) as error:
+                except (WorkflowException, IOError):
                     self.communication_lost(dev_id, "set_power")
                     return
             elif lifx_command == CMD_BRIGHTNESS and newBrightness > 0 and powerLevel == 0:
                 # Need to reset existing brightness to 0 before turning on
                 try:
-                    hsbkWithBrightnessZero = set_hsbk(hue, saturation, 0, kelvin)
+                    hsbkWithBrightnessZero = set_hsbk(dev, hue, saturation, 0, kelvin)
+                    if hsbkWithBrightnessZero[0]:
+                        del hsbkWithBrightnessZero[0]
+                    else:
+                        self.lh_logger.error(hsbkWithBrightnessZero[1])
+                        return
+
                     self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_color(
                         hsbkWithBrightnessZero, 0)
                     self.communication_ok(dev_id, lifx_command)
-                except (StandardError, WorkflowException, IOError) as error:
+                except (WorkflowException, IOError):
                     self.communication_lost(dev_id, "set_color")
                     return
                 # Need to turn on LIFX device as currently off
@@ -628,7 +672,7 @@ class ThreadLifxlanHandler(threading.Thread):
                 try:
                     self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_power(powerLevel, 0)
                     self.communication_ok(dev_id, lifx_command)
-                except (StandardError, WorkflowException, IOError) as error:
+                except (WorkflowException, IOError):
                     self.communication_lost(dev_id, "set_power")
                     return
 
@@ -651,25 +695,27 @@ class ThreadLifxlanHandler(threading.Thread):
                 # White
                 brightness = int(newBrightness)
 
-            self.lh_logger.debug(u"LIFX COMMAND [BRIGHTNESS]; SET-COLOR for {0}:"
-                                 u" Hue={1}, Saturation={2}, Brightness={3}, Kelvin={4}"
-                                 .format(indigo.devices[dev_id].name, hue, saturation,
-                                         brightness, kelvin))
+            self.lh_logger.debug(f"LIFX COMMAND [BRIGHTNESS]; SET-COLOR for {indigo.devices[dev_id].name}: Hue={hue}, Saturation={saturation}, Brightness={brightness}, Kelvin={kelvin}")
 
             try:
-                hsbk = set_hsbk(hue, saturation, brightness, kelvin)
+                hsbk = set_hsbk(dev, hue, saturation, brightness, kelvin)
+                if hsbk[0]:
+                    del hsbk[0]
+                else:
+                    self.lh_logger.error(hsbk[1])
+                    return
+
                 self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_color(hsbk, duration, True)
                 self.update_status_from_message(lifx_command, dev_id, powerLevel, hsbk)
                 self.communication_ok(dev_id, lifx_command)
-            except (StandardError, WorkflowException, IOError) as error:
+            except (WorkflowException, IOError):
                 self.communication_lost(dev_id, "set_color")
                 return
 
             self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = lifx_command
 
-        except StandardError as standard_error_message:
-            self.lh_logger.error(u"StandardError detected in 'process_dim_brighten_brightness'. Line {0} has error: {1}"
-                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def process_dim_by_timer(self, lifx_command, dev, lifx_command_arguments):
         try:
@@ -705,7 +751,7 @@ class ThreadLifxlanHandler(threading.Thread):
                         [QUEUE_PRIORITY_COMMAND_HIGH, CMD_DIM, dev_id, [newBrightness]])
                     self.globals[K_QUEUES][K_LIFXLAN_HANDLER][K_QUEUE].put(
                         [QUEUE_PRIORITY_COMMAND_HIGH, CMD_OFF, dev_id, None])
-                    self.lh_logger.info(u"'{0}' {1}".format(dev.name, "dimmed to off"))
+                    self.lh_logger.info(f"'{dev.name}' {'dimmed to off'}")
                 else:
                     self.globals[K_QUEUES][K_LIFXLAN_HANDLER][K_QUEUE].put(
                         [QUEUE_PRIORITY_COMMAND_HIGH, CMD_DIM, dev_id, [newBrightness]])
@@ -716,15 +762,14 @@ class ThreadLifxlanHandler(threading.Thread):
                                         [[dev_id, option, amountToDimBy, timerInterval]])
                     self.globals[K_DEVICE_TIMERS][dev_id]["BRIGHTEN_DIM_BY_TIMER"].start()
 
-        except StandardError as standard_error_message:
-            self.lh_logger.error(u"StandardError detected in 'process_dim_by_timer'. Line {0} has error: {1}"
-                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def process_get_host_firmware(self, lifx_command, dev):
         try:
             dev_id = dev.id
 
-            self.lh_logger.debug(u"Processing {0} for '{1}' ".format(lifx_command, indigo.devices[dev_id].name))
+            self.lh_logger.debug(f"Processing {lifx_command} for '{indigo.devices[dev_id].name}' ")
 
             dev = indigo.devices[dev_id]
 
@@ -734,12 +779,12 @@ class ThreadLifxlanHandler(threading.Thread):
             try:
                 firmware_version = str(self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].get_host_firmware_version())
                 self.communication_ok(dev_id, lifx_command)
-            except (StandardError, WorkflowException, IOError) as error:
+            except (WorkflowException, IOError):
                 self.communication_lost(dev_id, 'get_host_firmware_version')
                 return
 
             self.lh_logger.debug(
-                u"HOST FIRMWARE VERSION for '{0}': '{1}'".format(indigo.devices[dev_id].name, firmware_version))
+                f"HOST FIRMWARE VERSION for '{indigo.devices[dev_id].name}': '{firmware_version}'")
 
             props = dev.pluginProps
 
@@ -763,47 +808,42 @@ class ThreadLifxlanHandler(threading.Thread):
 
             self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = lifx_command
 
-        except StandardError as standard_error_message:
-            self.lh_logger.error(u"StandardError detected in 'process_get_host_firmware'. Line {0} has error: {1}"
-                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def process_get_host_info(self, lifx_command, dev, lifx_command_arguments):
         try:
-            self.lh_logger.debug(u"Processing {0}".format(lifx_command))
+            self.lh_logger.debug(f"Processing {lifx_command}")
 
-        except StandardError as standard_error_message:
-            self.lh_logger.error(u"StandardError detected in 'process_get_host_info'. Line {0} has error: {1}"
-                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def process_get_group(self, lifx_command, dev, lifx_command_arguments):
         try:
-            self.lh_logger.debug(u"Processing {0}".format(lifx_command))
+            self.lh_logger.debug(f"Processing {lifx_command}")
 
-        except StandardError as standard_error_message:
-            self.lh_logger.error(u"StandardError detected in 'process_get_group'. Line {0} has error: {1}"
-                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def process_get_info(self, lifx_command, dev, lifx_command_arguments):
         try:
-            self.lh_logger.debug(u"Processing {0}".format(lifx_command))
+            self.lh_logger.debug(f"Processing {lifx_command}")
 
-        except StandardError as standard_error_message:
-            self.lh_logger.error(u"StandardError detected in 'process_get_info'. Line {0} has error: {1}"
-                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def process_get_location(self, lifx_command, dev, lifx_command_arguments):
         try:
-            self.lh_logger.debug(u"Processing {0}".format(lifx_command))
+            self.lh_logger.debug(f"Processing {lifx_command}")
 
-        except StandardError as standard_error_message:
-            self.lh_logger.error(u"StandardError detected in 'process_get_location'. Line {0} has error: {1}"
-                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def process_get_port(self, lifx_command, dev):
         try:
             dev_id = dev.id
 
-            self.lh_logger.debug(u"Processing {0} for '{1}' ".format(lifx_command, indigo.devices[dev_id].name))
+            self.lh_logger.debug(f"Processing {lifx_command} for '{indigo.devices[dev_id].name}' ")
 
             # Clear any outstanding timers
             self.clear_status_timer(dev)
@@ -811,11 +851,11 @@ class ThreadLifxlanHandler(threading.Thread):
             try:
                 port = str(self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].get_port())
                 self.communication_ok(dev_id, lifx_command)
-            except (StandardError, WorkflowException, IOError) as error:
+            except (WorkflowException, IOError):
                 self.communication_lost(dev_id, 'get_port')
                 return
 
-            self.lh_logger.info(u"Port for '{0}': '{1}'".format(indigo.devices[dev_id].name, port))
+            self.lh_logger.info(f"Port for '{indigo.devices[dev_id].name}': '{port}'")
 
             # props = dev.pluginProps
 
@@ -839,15 +879,14 @@ class ThreadLifxlanHandler(threading.Thread):
 
             self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = lifx_command
 
-        except StandardError as standard_error_message:
-            self.lh_logger.error(u"StandardError detected in 'process_get_port'. Line {0} has error: {1}"
-                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def process_get_version(self, lifx_command, dev):
         try:
             dev_id = dev.id
 
-            self.lh_logger.debug(u"Processing {0} for '{1}' ".format(lifx_command, indigo.devices[dev_id].name))
+            self.lh_logger.debug(f"Processing {lifx_command} for '{indigo.devices[dev_id].name}' ")
 
             # Clear any outstanding timers
             self.clear_status_timer(dev)
@@ -855,18 +894,18 @@ class ThreadLifxlanHandler(threading.Thread):
             try:
                 product = self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].get_product()
                 self.communication_ok(dev_id, lifx_command)
-            except (StandardError, WorkflowException, IOError) as error:
+            except (WorkflowException, IOError):
                 self.communication_lost(dev_id, 'get_product')
                 return
 
-            self.lh_logger.debug(u"PRODUCT for '{0}' = '{1}'".format(indigo.devices[dev_id].name, product))
+            self.lh_logger.debug(f"PRODUCT for '{indigo.devices[dev_id].name}' = '{product}'")
 
             productFound = False
             try:
-                model = u"{0}".format(LIFX_PRODUCTS[product][LIFX_PRODUCT_NAME])  # Defined in constants.py
+                model = f"{LIFX_PRODUCTS[product][LIFX_PRODUCT_NAME]} [{product}]"  # LIFX_PRODUCT_NAME is defined in constants.py
                 productFound = True
             except KeyError:
-                model = u"LIFX Product - {0}".format(product)
+                model = f"LIFX Product - {product}"
 
             if dev.model != model:
                 dev.model = model
@@ -897,15 +936,14 @@ class ThreadLifxlanHandler(threading.Thread):
 
             self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = lifx_command
 
-        except StandardError as standard_error_message:
-            self.lh_logger.error(u"StandardError detected in 'process_get_version'. Line {0} has error: {1}"
-                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def process_get_wifi_firmware(self, lifx_command, dev, lifx_command_arguments):
         try:
             dev_id = dev.id
 
-            self.lh_logger.debug(u"Processing {0} for '{1}' ".format(lifx_command, indigo.devices[dev_id].name))
+            self.lh_logger.debug(f"Processing {lifx_command} for '{indigo.devices[dev_id].name}' ")
 
             dev = indigo.devices[dev_id]
 
@@ -915,12 +953,11 @@ class ThreadLifxlanHandler(threading.Thread):
             try:
                 wifi_firmware_version = str(self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].get_wifi_firmware_version())
                 self.communication_ok(dev_id, lifx_command)
-            except (StandardError, WorkflowException, IOError) as error:
+            except (WorkflowException, IOError):
                 self.communication_lost(dev_id, 'get_wifi_firmware_version')
                 return
 
-            self.lh_logger.debug(u"WI-FI FIRMWARE VERSION for '{0}': '{1}'".format(indigo.devices[dev_id].name,
-                                                                                   wifi_firmware_version))
+            self.lh_logger.debug(f"WI-FI FIRMWARE VERSION for '{indigo.devices[dev_id].name}': '{wifi_firmware_version}'")
 
             props = dev.pluginProps
 
@@ -944,15 +981,14 @@ class ThreadLifxlanHandler(threading.Thread):
 
             self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = lifx_command
 
-        except StandardError as standard_error_message:
-            self.lh_logger.error(u"StandardError detected in 'process_get_wifi_firmware'. Line {0} has error: {1}"
-                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def process_get_wifi_info(self, lifx_command, dev):
         try:
             dev_id = dev.id
 
-            self.lh_logger.debug(u"Processing {0} for '{1}' ".format(lifx_command, indigo.devices[dev_id].name))
+            self.lh_logger.debug(f"Processing {lifx_command} for '{indigo.devices[dev_id].name}' ")
 
             # Clear any outstanding timers
             self.clear_status_timer(dev)
@@ -960,15 +996,14 @@ class ThreadLifxlanHandler(threading.Thread):
             try:
                 signal, tx, rx = self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].get_wifi_info_tuple()
                 self.communication_ok(dev_id, lifx_command)
-            except (StandardError, WorkflowException, IOError) as error:
+            except (WorkflowException, IOError):
                 self.communication_lost(dev_id, 'get_wifi_info_tuple')
                 return
 
             self.lh_logger.debug(
-                u"WI-FI INFO [1] for '{0}': Signal={1}, Tx={2}, Rx={3}".format(indigo.devices[dev_id].name, signal,
-                                                                               tx, rx))
+                f"WI-FI INFO [1] for '{indigo.devices[dev_id].name}': Signal={signal}, Tx={tx}, Rx={rx}")
             if signal is not None:
-                signal = str('{:.16f}'.format(signal))[0:12]
+                signal = str(f'{signal:.16f}')[0:12]
             locale.setlocale(locale.LC_ALL, 'en_US')
             if tx is not None:
                 tx = locale.format("%d", tx, grouping=True)
@@ -976,8 +1011,7 @@ class ThreadLifxlanHandler(threading.Thread):
                 rx = locale.format("%d", rx, grouping=True)
 
             self.lh_logger.debug(
-                u"WI-FI INFO [2] for '{0}': Signal={1}, Tx={2}, Rx={3}".format(indigo.devices[dev_id].name, signal,
-                                                                               tx, rx))
+                f"WI-FI INFO [2] for '{indigo.devices[dev_id].name}': Signal={signal}, Tx={tx}, Rx={rx}")
 
             keyValueList = [
                 {"key": "wifi_signal", "value": signal},
@@ -988,16 +1022,14 @@ class ThreadLifxlanHandler(threading.Thread):
 
             self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = lifx_command
 
-        except StandardError as standard_error_message:
-            self.lh_logger.error(u"StandardError detected in 'process_get_wifi_info'. Line {0} has error: {1}"
-                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def process_infrared(self, lifx_command, dev, lifx_command_arguments):
         try:
             dev_id = dev.id
 
-            self.lh_logger.debug(u"Processing {0} for '{1}' "
-                                 .format(lifx_command, indigo.devices[dev_id].name))
+            self.lh_logger.debug(f"Processing {lifx_command} for '{indigo.devices[dev_id].name}' ")
 
             dev = indigo.devices[dev_id]
 
@@ -1017,10 +1049,9 @@ class ThreadLifxlanHandler(threading.Thread):
 
             try:
                 self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_infrared(infraredBrightness)
-                self.lh_logger.debug(u"Processing {0} for '{1}'; Infrared Brightness = {2}"
-                                     .format(lifx_command, indigo.devices[dev_id].name, infraredBrightness))
+                self.lh_logger.debug(f"Processing {lifx_command} for '{indigo.devices[dev_id].name}'; Infrared Brightness = {infraredBrightness}")
                 self.communication_ok(dev_id, lifx_command)
-            except (StandardError, WorkflowException, IOError):
+            except (WorkflowException, IOError):
                 self.communication_lost(dev_id, "set_infrared")
                 return
 
@@ -1030,9 +1061,8 @@ class ThreadLifxlanHandler(threading.Thread):
 
             self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = lifx_command
 
-        except StandardError as standard_error_message:
-            self.lh_logger.error(u"StandardError detected in 'process_infrared'. Line {0} has error: {1}"
-                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def process_on_off(self, lifx_command, dev):
         try:
@@ -1042,7 +1072,7 @@ class ThreadLifxlanHandler(threading.Thread):
             self.globals[K_LIFX][dev_id][K_STOP_REPEAT_DIM] = True
             self.globals[K_LIFX][dev_id][K_STOP_REPEAT_BRIGHTEN] = True
 
-            self.lh_logger.debug(u"Processing {0} for '{1}' ".format(lifx_command, indigo.devices[dev_id].name))
+            self.lh_logger.debug(f"Processing {lifx_command} for '{indigo.devices[dev_id].name}' ")
 
             dev = indigo.devices[dev_id]
 
@@ -1078,15 +1108,14 @@ class ThreadLifxlanHandler(threading.Thread):
 
             self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = lifx_command
 
-        except StandardError as standard_error_message:
-            self.lh_logger.error(u"StandardError detected in 'process_on_off'. Line {0} has error: {1}".format(
-                sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def process_set_label(self, lifx_command, dev):
         try:
             dev_id = dev.id
 
-            self.lh_logger.debug(u"Processing {0} for '{1}' ".format(lifx_command, indigo.devices[dev_id].name))
+            self.lh_logger.debug(f"Processing {lifx_command} for '{indigo.devices[dev_id].name}' ")
 
             dev = indigo.devices[dev_id]
 
@@ -1096,14 +1125,13 @@ class ThreadLifxlanHandler(threading.Thread):
             try:
                 self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_label(dev.name)
                 self.communication_ok(dev_id, lifx_command)
-            except (StandardError, WorkflowException, IOError) as error:
+            except (WorkflowException, IOError):
                 self.communication_lost(dev_id, 'set_label')
 
             self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = lifx_command
 
-        except StandardError as standard_error_message:
-            self.lh_logger.error(u"StandardError detected in 'process_set_label'. Line {0} has error: {1}"
-                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def process_standard(self, lifx_command, dev, lifx_command_arguments):
         try:
@@ -1116,26 +1144,21 @@ class ThreadLifxlanHandler(threading.Thread):
             turnOnIfOff, targetMode, targetHue, targetSaturation, \
                 targetBrightness, targetKelvin, targetDuration = lifx_command_arguments
 
-            self.lh_logger.debug(u"LIFX COMMAND [STANDARD]; Target for {0}: TOIF={1}, Mode={2}, Hue={3},"
-                                 u" Saturation={4}, Brightness={5}, Kelvin={6}, Duration={7}"
-                                 .format(indigo.devices[dev_id].name, turnOnIfOff, targetMode, targetHue,
-                                         targetSaturation, targetBrightness, targetKelvin, targetDuration))
+            self.lh_logger.debug(
+                f"LIFX COMMAND [STANDARD]; Target for {indigo.devices[dev_id].name}: TOIF={turnOnIfOff}, Mode={targetMode}, Hue={targetHue}, Saturation={targetSaturation}, Brightness={targetBrightness}, Kelvin={targetKelvin}, Duration={targetDuration}")
 
             # Clear any outstanding timers
             self.clear_status_timer(dev)
 
             lifx_io_ok, power, hsbk = self.get_color(dev_id, self.globals[K_LIFX][dev_id][K_LIFX_DEVICE])
-            self.lh_logger.debug(u"LIFX COMMAND [COLOR] lifx_io_ok for {0} =  {1}, HSBK = {2}".format(
-                indigo.devices[dev_id].name, lifx_io_ok, hsbk))
+            self.lh_logger.debug(f"LIFX COMMAND [COLOR] lifx_io_ok for {indigo.devices[dev_id].name} =  {lifx_io_ok}, HSBK = {hsbk}")
             if lifx_io_ok:
                 hue = hsbk[0]
                 saturation = hsbk[1]
                 brightness = hsbk[2]
                 kelvin = hsbk[3]
 
-                self.lh_logger.debug(u"LIFX COMMAND [COLOR]; GET-COLOR for {0}:"
-                                     u" Hue={1}, Saturation={2}, Brightness={3}, Kelvin={4}"
-                                     .format(indigo.devices[dev_id].name, hue, saturation, brightness, kelvin))
+                self.lh_logger.debug(f"LIFX COMMAND [COLOR]; GET-COLOR for {indigo.devices[dev_id].name}: Hue={hue}, Saturation={saturation}, Brightness={brightness}, Kelvin={kelvin}")
 
                 if targetMode == 'White':
                     saturation = 0  # Force WHITE mode
@@ -1155,34 +1178,44 @@ class ThreadLifxlanHandler(threading.Thread):
                 else:
                     duration = int(self.globals[K_LIFX][dev_id][K_DURATION_COLOR_WHITE] * 1000)
 
-                self.lh_logger.debug(u"LIFX COMMAND [STANDARD][{0}]; SET-COLOR for {1}:"
-                                     u" Hue={2}, Saturation={3}, Brightness={4}, Kelvin={5}, duration={6}"
-                                     .format(targetMode, indigo.devices[dev_id].name, hue, saturation,
-                                             brightness, kelvin, duration))
+                self.lh_logger.debug(
+                    f"LIFX COMMAND [STANDARD][{targetMode}]; SET-COLOR for {indigo.devices[dev_id].name}: Hue={hue}, Saturation={saturation}, Brightness={brightness}, Kelvin={kelvin}, duration={duration}")
 
                 if power == 0 and turnOnIfOff:
                     try:
-                        hsbk = set_hsbk(hue, saturation, brightness, kelvin)
+                        hsbk = set_hsbk(dev, hue, saturation, brightness, kelvin)
+                        if hsbk[0]:
+                            del hsbk[0]
+                        else:
+                            self.lh_logger.error(hsbk[1])
+                            return
+
                         self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_color(hsbk, 0)
                         self.communication_ok(dev_id, lifx_command)
-                    except (StandardError, WorkflowException, IOError) as error:
+                    except (WorkflowException, IOError):
                         self.communication_lost(dev_id, 'set_color')
                         return
                     power = 65535
                     try:
                         self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_power(power, duration)
                         self.communication_ok(dev_id, lifx_command)
-                    except (StandardError, WorkflowException, IOError) as error:
+                    except (WorkflowException, IOError):
                         self.communication_lost(dev_id, 'set_power')
                         return
                 else:
                     if power == 0:
                         duration = 0  # As power is off. might as well do apply command straight away
                     try:
-                        hsbk = set_hsbk(hue, saturation, brightness, kelvin)
+                        hsbk = set_hsbk(dev, hue, saturation, brightness, kelvin)
+                        if hsbk[0]:
+                            del hsbk[0]
+                        else:
+                            self.lh_logger.error(hsbk[1])
+                            return
+
                         self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_color(hsbk, duration)
                         self.communication_ok(dev_id, lifx_command)
-                    except (StandardError, WorkflowException, IOError) as error:
+                    except (WorkflowException, IOError):
                         self.communication_lost(dev_id, 'set_color')
                         return
 
@@ -1194,9 +1227,8 @@ class ThreadLifxlanHandler(threading.Thread):
 
             self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = lifx_command
 
-        except StandardError as standard_error_message:
-            self.lh_logger.error(u"StandardError detected in 'process_standard'. Line {0} has error: {1}"
-                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def process_status(self, lifx_command, dev):
         try:
@@ -1210,13 +1242,13 @@ class ThreadLifxlanHandler(threading.Thread):
                 self.handle_no_ack_status(dev)
 
             if self.globals[K_LIFX][dev_id][K_LIFX_DEVICE] is None:
-                self.lh_logger.debug(u"PROCESS STATUS: K_LIFX_DEVICE is None for device '{0}'".format(dev.name))
+                self.lh_logger.debug(f"PROCESS STATUS: K_LIFX_DEVICE is None for device '{dev.name}'")
                 lifx_ip_address = dev.pluginProps["ip_address"]
                 self.globals[K_LIFX][dev_id][K_LIFX_DEVICE] = Light(dev.address, lifx_ip_address)
                 try:
                     self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].refresh()
                     refreshed = True
-                except (StandardError, WorkflowException):
+                except WorkflowException:
                     refreshed = False
                 if refreshed:
                     indigo.device.enable(dev_id, value=False)
@@ -1224,7 +1256,7 @@ class ThreadLifxlanHandler(threading.Thread):
                 else:
                     self.globals[K_LIFX][dev_id][K_LIFX_DEVICE] = None
                     if lifx_command == CMD_RECOVERY_STATUS:
-                        self.lh_logger.debug(u"Unable to reconnect to LIFX device '{0}'".format(dev.name))
+                        self.lh_logger.debug(f"Unable to reconnect to LIFX device '{dev.name}'")
                 return
 
             lifx_io_ok, power, hsbk = \
@@ -1245,20 +1277,15 @@ class ThreadLifxlanHandler(threading.Thread):
                                 {"key": "indigo_infrared_brightness", "value": indigo_infrared_brightness}]
                             dev.updateStatesOnServer(keyValueList)
 
-                            self.lh_logger.debug(u"LifxlanHandler Infrared Level for '{0}' is: {1}"
-                                                 .format(dev.name, indigo_infrared_brightness))
+                            self.lh_logger.debug(f"LifxlanHandler Infrared Level for '{dev.name}' is: {indigo_infrared_brightness}")
 
-                        except (StandardError, WorkflowException, IOError) as standard_error_message:
-
-                            self.lh_logger.error(u"StandardError detected communicating with LIFX lamp '{0}'."
-                                                 u" Line {1} has error: {2}"
-                                                 .format(dev.name, sys.exc_traceback.tb_lineno, standard_error_message))
+                        except (Exception, WorkflowException, IOError) as exception_error:
+                            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
             self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = lifx_command
 
-        except StandardError as standard_error_message:
-            self.lh_logger.error(u"StandardError detected in 'process_status' for LIFX device '{0}. Line {1} has error: {2}"
-                                 .format(dev.name, sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def process_waveform(self, lifx_command, dev, lifx_command_arguments):
         try:
@@ -1276,17 +1303,14 @@ class ThreadLifxlanHandler(threading.Thread):
             self.clear_waveform_off_timer(dev)
 
             lifx_io_ok, power, hsbk = self.get_color(dev_id, self.globals[K_LIFX][dev_id][K_LIFX_DEVICE])
-            self.lh_logger.debug(u"LIFX COMMAND [COLOR] lifx_io_ok for {0} =  {1}, HSBK = {2}".format(
-                indigo.devices[dev_id].name, lifx_io_ok, hsbk))
+            self.lh_logger.debug(f"LIFX COMMAND [COLOR] lifx_io_ok for {indigo.devices[dev_id].name} =  {lifx_io_ok}, HSBK = {hsbk}")
             if lifx_io_ok:
                 hue = hsbk[0]
                 saturation = hsbk[1]
                 brightness = hsbk[2]
                 kelvin = hsbk[3]
 
-                self.lh_logger.debug(u"LIFX COMMAND [COLOR]; GET-COLOR for {0}:"
-                                     u" Hue={1}, Saturation={2}, Brightness={3}, Kelvin={4}"
-                                     .format(indigo.devices[dev_id].name, hue, saturation, brightness, kelvin))
+                self.lh_logger.debug(f"LIFX COMMAND [COLOR]; GET-COLOR for {indigo.devices[dev_id].name}: Hue={hue}, Saturation={saturation}, Brightness={brightness}, Kelvin={kelvin}")
 
                 deviceAlreadyOn = True
                 if power == 0:
@@ -1297,7 +1321,7 @@ class ThreadLifxlanHandler(threading.Thread):
                     try:
                         self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_power(power, duration)
                         self.communication_ok(dev_id, lifx_command)
-                    except (StandardError, WorkflowException, IOError) as error:
+                    except (WorkflowException, IOError):
                         self.communication_lost(dev_id, 'set_power')
                         return
 
@@ -1313,7 +1337,12 @@ class ThreadLifxlanHandler(threading.Thread):
                         saturation = int((float(targetSaturation) * 65535.0) / 100.0)
                 if targetBrightness != '-':
                     brightness = int((float(targetBrightness) * 65535.0) / 100.0)
-                hsbk = set_hsbk(hue, saturation, brightness, kelvin)
+                hsbk = set_hsbk(dev, hue, saturation, brightness, kelvin)
+                if hsbk[0]:
+                    del hsbk[0]
+                else:
+                    self.lh_logger.error(hsbk[1])
+                    return
 
                 if targetTransient:
                     transient = int(1)
@@ -1324,19 +1353,15 @@ class ThreadLifxlanHandler(threading.Thread):
                 duty_cycle = int(targetDuty_cycle)
                 waveform = int(targetWaveform)
 
-                self.lh_logger.debug(u"LIFX COMMAND [WAVEFORM]; SET-WAVEFORM for {0}:"
-                                     u" Hue={1}, Saturation={2}, Brightness={3}, Kelvin={4}"
-                                     .format(indigo.devices[dev_id].name, hue, saturation, brightness, kelvin))
-                self.lh_logger.debug(u"LIFX COMMAND [WAVEFORM]; SET-WAVEFORM for {0}:"
-                                     u" Transient={1}, Period={2}, Cycles={3}, Duty_cycle={4}, Waveform={5}"
-                                     .format(indigo.devices[dev_id].name,
-                                             transient, period, cycles, duty_cycle, waveform))
+                self.lh_logger.debug(f"LIFX COMMAND [WAVEFORM]; SET-WAVEFORM for {indigo.devices[dev_id].name}: Hue={hue}, Saturation={saturation}, Brightness={brightness}, Kelvin={kelvin}")
+                self.lh_logger.debug(
+                    f"LIFX COMMAND [WAVEFORM]; SET-WAVEFORM for {indigo.devices[dev_id].name}: Transient={transient}, Period={period}, Cycles={cycles}, Duty_cycle={duty_cycle}, Waveform={waveform}")
 
                 try:
                     self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_waveform(
                         transient, hsbk, period, cycles, duty_cycle, waveform)
                     self.communication_ok(dev_id, lifx_command)
-                except (StandardError, WorkflowException, IOError) as error:
+                except (WorkflowException, IOError):
                     self.communication_lost(dev_id, 'set_waveform')
                     return
 
@@ -1348,9 +1373,8 @@ class ThreadLifxlanHandler(threading.Thread):
 
             self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = lifx_command
 
-        except StandardError as standard_error_message:
-            self.lh_logger.error(u"StandardError detected in 'process_waveform'. Line {0} has error: {1}"
-                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def process_white(self, lifx_command, dev, lifx_command_arguments):
         try:
@@ -1369,26 +1393,28 @@ class ThreadLifxlanHandler(threading.Thread):
                 self.get_color(dev_id,
                                self.globals[K_LIFX][dev_id][K_LIFX_DEVICE])
 
-            self.lh_logger.debug(u"LIFX COMMAND [WHITE] lifx_io_ok for {0} =  {1}, HSBK = {2}"
-                                 .format(indigo.devices[dev_id].name, lifx_io_ok, hsbk))
+            self.lh_logger.debug(f"LIFX COMMAND [WHITE] lifx_io_ok for {indigo.devices[dev_id].name} =  {lifx_io_ok}, HSBK = {hsbk}")
             if lifx_io_ok:
                 hue = hsbk[0]
                 saturation = hsbk[1]
                 brightness = hsbk[2]
                 kelvin = hsbk[3]
 
-                self.lh_logger.debug(u"LIFX COMMAND [WHITE]; GET-COLOR for {0}: Hue={1},"
-                                     u" Saturation={2}, Brightness={3}, Kelvin={4}"
-                                     .format(indigo.devices[dev_id].name, hue, saturation,
-                                             brightness, kelvin))
+                self.lh_logger.debug(f"LIFX COMMAND [WHITE]; GET-COLOR for {indigo.devices[dev_id].name}: Hue={hue}, Saturation={saturation}, Brightness={brightness}, Kelvin={kelvin}")
 
                 if power == 0 and self.globals[K_LIFX][dev_id]["turn_on_if_off"]:
                     # Need to reset existing brightness to 0 before turning on
                     try:
-                        hsbkWithBrightnessZero = set_hsbk(hue, saturation, 0, kelvin)
+                        hsbkWithBrightnessZero = set_hsbk(dev, hue, saturation, 0, kelvin)
+                        if hsbkWithBrightnessZero[0]:
+                            del hsbkWithBrightnessZero[0]
+                        else:
+                            self.lh_logger.error(hsbkWithBrightnessZero[1])
+                            return
+
                         self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_color(
                             hsbkWithBrightnessZero, 0)
-                    except (StandardError, WorkflowException, IOError) as error:
+                    except (WorkflowException, IOError):
                         self.communication_lost(dev_id, "set_color")
                         return
                     # Need to turn on LIFX device as currently off
@@ -1396,7 +1422,7 @@ class ThreadLifxlanHandler(threading.Thread):
                     try:
                         self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_power(power, 0)
                         self.communication_ok(dev_id, lifx_command)
-                    except (StandardError, WorkflowException, IOError) as error:
+                    except (WorkflowException, IOError):
                         self.communication_lost(dev_id, "set_power")
                         return
 
@@ -1405,16 +1431,19 @@ class ThreadLifxlanHandler(threading.Thread):
                 kelvin = int(targetWhiteTemperature)
                 duration = int(self.globals[K_LIFX][dev_id][K_DURATION_COLOR_WHITE] * 1000)
 
-                self.lh_logger.debug(u"LIFX COMMAND [WHITE]; SET-COLOR for {0}:"
-                                     u" Hue={1}, Saturation={2}, Brightness={3}, Kelvin={4}"
-                                     .format(indigo.devices[dev_id].name, hue, saturation,
-                                             brightness, kelvin))
+                self.lh_logger.debug(f"LIFX COMMAND [WHITE]; SET-COLOR for {indigo.devices[dev_id].name}: Hue={hue}, Saturation={saturation}, Brightness={brightness}, Kelvin={kelvin}")
 
                 try:
-                    hsbk = set_hsbk(hue, saturation, brightness, kelvin)
+                    hsbk = set_hsbk(dev, hue, saturation, brightness, kelvin)
+                    if hsbk[0]:
+                        del hsbk[0]
+                    else:
+                        self.lh_logger.error(hsbk[1])
+                        return
+
                     self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].set_color(hsbk, duration)
                     self.communication_ok(dev_id, lifx_command)
-                except (StandardError, WorkflowException, IOError) as error:
+                except (WorkflowException, IOError):
                     self.communication_lost(dev_id, "set_color")
                     return
 
@@ -1428,19 +1457,15 @@ class ThreadLifxlanHandler(threading.Thread):
 
             self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = lifx_command
 
-        except StandardError as standard_error_message:
-            self.lh_logger.error(u"StandardError detected in 'process_white'. Line {0} has error: {1}"
-                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def update_status_from_message(self, lifxCommand, dev_id, power, hsbk):
         try:
             dev = indigo.devices[dev_id]
 
             hue, saturation, brightness, kelvin = hsbk
-            self.lh_logger.debug(u"HANDLE '{0}' MESSAGE for {1}:"
-                                 u" Power={2}, Hue={3}, Saturation={4}, Brightness={5}, Kelvin={6}"
-                                 .format(lifxCommand, indigo.devices[dev_id].name, power, hue, saturation,
-                                         brightness, kelvin))
+            self.lh_logger.debug(f"HANDLE '{lifxCommand}' MESSAGE for {indigo.devices[dev_id].name}: Power={power}, Hue={hue}, Saturation={saturation}, Brightness={brightness}, Kelvin={kelvin}")
 
             if power > 0:
                 self.globals[K_LIFX][dev_id]["onState"] = True
@@ -1460,17 +1485,16 @@ class ThreadLifxlanHandler(threading.Thread):
             self.globals[K_LIFX][dev_id]["hsbkBrightness"] = brightness
             self.globals[K_LIFX][dev_id]["hsbkKelvin"] = kelvin
 
-            self.lh_logger.debug(u"  LIGHT_STATE = Power: {0}".format(self.globals[K_LIFX][dev_id]["powerLevel"]))
-            self.lh_logger.debug(u"  LIGHT_STATE = onState: {0}".format(self.globals[K_LIFX][dev_id]["onState"]))
-            self.lh_logger.debug(u"  LIGHT_STATE = onOffState: {0}".format(self.globals[K_LIFX][dev_id]["onOffState"]))
+            self.lh_logger.debug(f"  LIGHT_STATE = Power: {self.globals[K_LIFX][dev_id]['powerLevel']}")
+            self.lh_logger.debug(f"  LIGHT_STATE = onState: {self.globals[K_LIFX][dev_id]['onState']}")
+            self.lh_logger.debug(f"  LIGHT_STATE = onOffState: {self.globals[K_LIFX][dev_id]['onOffState']}")
 
             # At this point we have an Indigo device id for the lamp
             #   and can confirm that the indigo device has been started
 
             # Set the current poll count (for 'no ack' check)
             # self.globals[K_LIFX][dev_id]["lastResponseToPollCount"] = self.globals[K_POLLING][K_COUNT]
-            # self.lh_logger.debug(u"LAST RESPONSE TO POLL COUNT for {0} = {1}"
-            #                      .format(dev.name, self.globals[K_POLLING][K_COUNT]))
+            # self.lh_logger.debug(f"LAST RESPONSE TO POLL COUNT for {dev.name} = {self.globals[K_POLLING][K_COUNT]}")
 
             self.globals[K_LIFX][dev_id]["initialisedFromlamp"] = True
 
@@ -1527,9 +1551,13 @@ class ThreadLifxlanHandler(threading.Thread):
                     # Colour
                     saturation = hsv_saturation * 100.0
                     brightness = hsv_value * 100.0
-                    calculatedBrightnessLevel = float(calculate_brightness_level_from_sv(saturation, brightness))
-                    self.globals[K_LIFX][dev_id]["brightnessLevel"] = \
-                        int(calculatedBrightnessLevel * (self.globals[K_LIFX][dev_id]["powerLevel"] / 65535.0))
+                    calculatedBrightnessLevel = calculate_brightness_level_from_sv(saturation, brightness)
+                    if calculatedBrightnessLevel[0]:
+                        calculatedBrightnessLevel = calculatedBrightnessLevel[1]
+                        self.globals[K_LIFX][dev_id]["brightnessLevel"] = int(calculatedBrightnessLevel * (self.globals[K_LIFX][dev_id]["powerLevel"] / 65535.0))
+                    else:
+                        self.lh_logger.error(calculatedBrightnessLevel[1])
+                        return
                 else:
                     # White
                     self.globals[K_LIFX][dev_id]["brightnessLevel"] = \
@@ -1596,6 +1624,5 @@ class ThreadLifxlanHandler(threading.Thread):
 
             dev.updateStateImageOnServer(indigo.kStateImageSel.Auto)
 
-        except StandardError as standard_error_message:
-            self.lh_logger.error(u"StandardError detected in 'update_status_from_message'. Line {0} has error: {1}"
-                                 .format(sys.exc_traceback.tb_lineno, standard_error_message))
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement

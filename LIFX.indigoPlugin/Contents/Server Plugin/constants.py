@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# LIFX V4 Controller - Constants © Autolog 2016
+# LIFX V7 Controller © Autolog 2020-2022
 #
 
 # plugin Constants

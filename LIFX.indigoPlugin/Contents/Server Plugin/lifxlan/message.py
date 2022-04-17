@@ -4,7 +4,7 @@
 
 import struct
 
-import bitstring
+from .bitstring import pack
 
 BROADCAST_MAC = "00:00:00:00:00:00"
 BROADCAST_SOURCE_ID = 0
@@ -60,15 +60,15 @@ class Message(object):
 
     # Default: No payload unless method overridden
     def get_payload(self):
-        return little_endian(bitstring.pack(""))
+        return little_endian(pack(""))
 
     def get_frame(self):
         size_format = self.frame_format[0]
         flags_format = self.frame_format[1]
         source_id_format = self.frame_format[2]
-        size = little_endian(bitstring.pack(size_format, self.size))
-        flags = little_endian(bitstring.pack(flags_format, self.origin, self.tagged, self.addressable, self.protocol))
-        source_id = little_endian(bitstring.pack(source_id_format, self.source_id))
+        size = little_endian(pack(size_format, self.size))
+        flags = little_endian(pack(flags_format, self.origin, self.tagged, self.addressable, self.protocol))
+        source_id = little_endian(pack(source_id_format, self.source_id))
         frame = size + flags + source_id
         return frame
 
@@ -77,10 +77,10 @@ class Message(object):
         reserved_48_format = self.frame_addr_format[1]
         response_flags_format = self.frame_addr_format[2]
         seq_num_format = self.frame_addr_format[3]
-        mac_addr = little_endian(bitstring.pack(mac_addr_format, convert_MAC_to_int(self.target_addr)))
-        reserved_48 = little_endian(bitstring.pack(reserved_48_format, self.reserved))
-        response_flags = little_endian(bitstring.pack(response_flags_format, self.reserved, self.ack_requested, self.response_requested))
-        seq_num = little_endian(bitstring.pack(seq_num_format, self.seq_num))
+        mac_addr = little_endian(pack(mac_addr_format, convert_MAC_to_int(self.target_addr)))
+        reserved_48 = little_endian(pack(reserved_48_format, self.reserved))
+        response_flags = little_endian(pack(response_flags_format, self.reserved, self.ack_requested, self.response_requested))
+        seq_num = little_endian(pack(seq_num_format, self.seq_num))
         frame_addr = mac_addr + reserved_48 + response_flags + seq_num
         return frame_addr
 
@@ -88,9 +88,9 @@ class Message(object):
         reserved_64_format = self.protocol_header_format[0]
         message_type_format = self.protocol_header_format[1]
         reserved_16_format = self.protocol_header_format[2]
-        reserved_64 = little_endian(bitstring.pack(reserved_64_format, self.reserved))
-        message_type = little_endian(bitstring.pack(message_type_format, self.message_type))
-        reserved_16 = little_endian(bitstring.pack(reserved_16_format, self.reserved))
+        reserved_64 = little_endian(pack(reserved_64_format, self.reserved))
+        message_type = little_endian(pack(message_type_format, self.message_type))
+        reserved_16 = little_endian(pack(reserved_16_format, self.reserved))
         protocol_header = reserved_64 + message_type + reserved_16
         return protocol_header
 

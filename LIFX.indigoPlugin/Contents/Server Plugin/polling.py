@@ -1,18 +1,14 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# LIFX V6 Controller © Autolog 2020
-
-# TODO: TBA
-# -
-# -
-
+# LIFX V7 Controller © Autolog 2020-2022
 
 # noinspection PyUnresolvedReferences
 # ============================== Native Imports ===============================
 import logging
 import sys
 import threading
+import traceback
 import time
 
 # ============================== Custom Imports ===============================
@@ -42,6 +38,16 @@ class ThreadPolling(threading.Thread):
         self.p_logger.debug(u"Debugging Polling Thread")
 
         self.p_logger.info(u"Initialising to poll at {0} second intervals".format(self.globals[K_POLLING][K_SECONDS]))
+
+    def exception_handler(self, exception_error_message, log_failing_statement):
+        filename, line_number, method, statement = traceback.extract_tb(sys.exc_info()[2])[-1]
+        module = filename.split('/')
+        log_message = u"'{0}' in module '{1}', method '{2}'".format(exception_error_message, module[-1], method)
+        if log_failing_statement:
+            log_message = log_message + u"\n   Failing statement [line {0}]: '{1}'".format(line_number, statement)
+        else:
+            log_message = log_message + u" at line {0}".format(line_number)
+        self.p_logger.error(log_message)
 
     def run(self):
         try:  
@@ -80,8 +86,8 @@ class ThreadPolling(threading.Thread):
                                 .format(self.poll_stop.isSet(), self.globals[K_POLLING][K_FORCE_THREAD_END],
                                         self.globals[K_POLLING][K_SECONDS], self.previous_polling_seconds))
 
-        except StandardError, standard_error:
-            self.p_logger.error(u"StandardError detected during Polling. Line {0} has error: {1}"
-                                .format(sys.exc_traceback.tb_lineno, standard_error))
+
+        except Exception as exception_error:
+            self.exception_handler(exception_error, True)  # Log error and display failing statement
 
         self.globals[K_POLLING][K_THREAD_ACTIVE] = False
