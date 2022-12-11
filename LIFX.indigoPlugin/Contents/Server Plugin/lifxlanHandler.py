@@ -1006,9 +1006,9 @@ class ThreadLifxlanHandler(threading.Thread):
                 signal = str(f'{signal:.16f}')[0:12]
             locale.setlocale(locale.LC_ALL, 'en_US')
             if tx is not None:
-                tx = locale.format("%d", tx, grouping=True)
+                tx = locale.format_string("%d", tx, grouping=True)
             if rx is not None:
-                rx = locale.format("%d", rx, grouping=True)
+                rx = locale.format_string("%d", rx, grouping=True)
 
             self.lh_logger.debug(
                 f"WI-FI INFO [2] for '{indigo.devices[dev_id].name}': Signal={signal}, Tx={tx}, Rx={rx}")
@@ -1578,8 +1578,8 @@ class ThreadLifxlanHandler(threading.Thread):
                 {"key": "hsbk_kelvin", "value": self.globals[K_LIFX][dev_id]["hsbkKelvin"]},
                 {"key": "power_level", "value": self.globals[K_LIFX][dev_id]["powerLevel"]},
 
-                {"key": "group_label", "value": self.globals[K_LIFX][dev_id]["groupLabel"]},
-                {"key": "location_label", "value": self.globals[K_LIFX][dev_id]["locationLabel"]},
+                # {"key": "group_label", "value": self.globals[K_LIFX][dev_id]["groupLabel"]},
+                # {"key": "location_label", "value": self.globals[K_LIFX][dev_id]["locationLabel"]},
 
                 {"key": "when_last_on_hsbk_hue", "value": self.globals[K_LIFX][dev_id]["whenLastOnHsbkHue"]},
                 {"key": "when_last_on_hsbk_saturation",
