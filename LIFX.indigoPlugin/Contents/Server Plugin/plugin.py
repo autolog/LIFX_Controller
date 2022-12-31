@@ -1031,8 +1031,8 @@ class Plugin(indigo.PluginBase):
             except Exception as exception_error:
                 check_error_message = "illegal IP address string passed to inet_aton"
                 exception_error_message = f"{exception_error}"
-                self.logger.warning(f"CEM [{len(check_error_message)}: {check_error_message}")
-                self.logger.warning(f"SEM[{len(standard_error_message)}: {exception_error_message}")
+                self.logger.warning(f"CEM [{len(check_error_message)}: {check_error_message}")  # TODO: What is CEM and SEM ?
+                # self.logger.warning(f"SEM[{len(standard_error_message)}: {exception_error_message}")  # TODO: What is this line for?
                 if exception_error_message == check_error_message:
                     error_message = f"Update of IP Address to '{new_ip_address}' rejected as IP address is invalid."
                 else:

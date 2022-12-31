@@ -500,7 +500,12 @@ class Device(object):
             while not response_seen and not timedout:
                 if not sent:
                     if self.ip_addr:
-                        sock.sendto(msg.packed_message, (self.ip_addr, self.port))
+                        # AUTOLOG CODE START
+                        try:  # Autolog
+                            sock.sendto(msg.packed_message, (self.ip_addr, self.port))
+                        except Exception as exception_error:  # Autolog
+                            print(f"Autolog - Sock Errore: {exception_error}")  # Autolog
+                        # AUTOLOG CODE END
                     else:
                         for ip_addr in UDP_BROADCAST_IP_ADDRS:
                             sock.sendto(msg.packed_message, (ip_addr, self.port))
