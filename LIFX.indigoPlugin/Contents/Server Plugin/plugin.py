@@ -59,7 +59,7 @@ class Plugin(indigo.PluginBase):
         #   self.indigo_log_handler - writes log messages to Indigo Event Log
         #   self.plugin_file_handler - writes log messages to the plugin log
 
-        log_format = logging.Formatter("%(asctime)s.%(msecs)03d\t%(levelname)-12s\t%(name)s.%(funcName)-25s %(msg)s",datefmt="%Y-%m-%d %H:%M:%S")
+        log_format = logging.Formatter("%(asctime)s.%(msecs)03d\t%(levelname)-12s\t%(name)s.%(funcName)-25s %(msg)s", datefmt="%Y-%m-%d %H:%M:%S")
         self.plugin_file_handler.setFormatter(log_format)
         self.plugin_file_handler.setLevel(K_LOG_LEVEL_INFO)  # Logging Level for plugin log file
         self.indigo_log_handler.setLevel(K_LOG_LEVEL_INFO)   # Logging level for Indigo Event Log
@@ -402,7 +402,7 @@ class Plugin(indigo.PluginBase):
                 # self.globals[K_LIFX][dev_id][K_NO_ACK_STATE] = False
                 self.globals[K_LIFX][dev_id][K_IGNORE_NO_ACK] = bool(dev.pluginProps.get("ignore_no_ack", False))
 
-            # Set LIFX device Timer icon and "... UI state etc
+            # Set LIFX device Timer icon and UI state etc
             dev.updateStateImageOnServer(indigo.kStateImageSel.TimerOn)
             dev.updateStateOnServer(key="connected", value=False)
             dev.updateStateOnServer(key="discovered", value=False)
@@ -2785,7 +2785,6 @@ class Plugin(indigo.PluginBase):
         try:
             header = "\nRECOVERY TOTALS\n===============\n\n"
 
-            detail = ""
             detail_list = []
             max_len_dev_name = 0
             for dev in indigo.devices.iter("self"):

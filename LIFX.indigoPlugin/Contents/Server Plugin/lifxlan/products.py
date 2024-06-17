@@ -88,7 +88,36 @@ product_map = {1: "LIFX Original 1000",
                136: "LIFX GU10 Color Intl",
                137: "LIFX Candle Color US",
                138: "LIFX Candle Color Intl",
-
+               141: "LIFX Neon US",
+               142: "LIFX Neon Intl",
+               143: "LIFX String US",
+               144: "LIFX String Intl",
+               161: "LIFX Outdoor Neon US",
+               162: "LIFX Outdoor Intl",
+               163: "LIFX A19 US",
+               164: "LIFX BR30 US",
+               165: "LIFX A19 Intl",
+               166: "LIFX BR30 Intl",
+               167: "LIFX Downlight",
+               168: "LIFX Downlight",
+               169: "LIFX A21 1600lm US",
+               170: "LIFX A21 1600lm Intl",
+               171: "LIFX Round Spot US",
+               173: "LIFX Round Path US",
+               174: "LIFX Square Path US",
+               175: "LIFX PAR38 US",
+               176: "LIFX Ceiling US",
+               177: "LIFX Ceiling Intl",
+               181: "LIFX Color US",
+               182: "LIFX Color Intl",
+               185: "LIFX Candle Color US",
+               186: "LIFX Candle Color Intl",
+               187: "LIFX Candle Color US",
+               188: "LIFX Candle Color Intl",
+               203: "LIFX String US",
+               204: "LIFX String Intl",
+               205: "LIFX Indoor Neon US",
+               206: "LIFX Indoor Neon Intl",
                None: "Unknown product"
                }
 
@@ -96,12 +125,14 @@ product_map = {1: "LIFX Original 1000",
 light_products = [1, 3, 10, 11, 15, 18, 19, 20, 22, 27, 28, 29, 30, 31, 32, 36, 37, 38, 39, 40, 43, 44, 45, 46, 49,
                   50, 51, 52, 53, 55, 57, 59, 60, 61, 62, 63, 64, 65, 66, 68, 81, 82, 85, 87, 88, 90, 91, 92, 93, 94, 96, 97, 98, 99,
                   100, 101, 109, 110, 111, 112, 113, 114, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129,
-                  130, 131, 132, 133, 134, 135, 136, 137, 138]
+                  130, 131, 132, 133, 134, 135, 136, 137, 138, 141, 142, 143, 144, 161, 162, 163, 164, 165, 166, 167, 168, 169,
+                  170, 171, 173, 174, 175, 176, 177, 181, 182, 185, 186, 187, 188, 203, 204, 205, 206]
 
 # Identifies which products are switches.
 switch_products = [70, 71, 89, 115, 116]
 
-features_map = {1: {                    # LIFX Original 1000
+features_map = {1: {
+                    "name": "LIFX Original 1000",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -113,7 +144,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                3: {                    # LIFX Color 650
+                3: {
+                    "name": "LIFX Color 650",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -125,7 +157,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                10: {                    # LIFX White 800 (Low Voltage)
+                10: {
+                    "name": "LIFX White 800 (Low Voltage)",
                     "color": False,
                     "temperature": True,
                     "infrared": False,
@@ -137,7 +170,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                11: {                    # LIFX White 800 (High Voltage)
+                11: {
+                    "name": "LIFX White 800 (High Voltage)",
                     "color": False,
                     "temperature": True,
                     "infrared": False,
@@ -149,7 +183,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                15: {                    # LIFX Color 1000
+                15: {
+                    "name": "LIFX Color 1000",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -161,7 +196,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                18: {                    # LIFX White 900 BR30 (Low Voltage)
+                18: {
+                    "name": "LIFX White 900 BR30 (Low Voltage)",
                     "color": False,
                     "temperature": True,
                     "infrared": False,
@@ -173,7 +209,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                19: {                    # LIFX White 900 BR30 (High Voltage)
+                19: {
+                    "name": "LIFX White 900 BR30 (High Voltage)",
                     "color": False,
                     "temperature": True,
                     "infrared": False,
@@ -185,7 +222,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                20: {                    # LIFX Color 1000 BR30
+                20: {
+                    "name": "LIFX Color 1000 BR30",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -197,7 +235,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                22: {                    # LIFX Color 1000
+                22: {
+                    "name": "LIFX Color 1000",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -209,7 +248,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                27: {                    # LIFX A19
+                27: {
+                    "name": "LIFX A19",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -221,7 +261,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                28: {                    # LIFX BR30
+                28: {
+                    "name": "LIFX BR30",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -233,7 +274,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                29: {                    # LIFX A19 Night Vision
+                29: {
+                    "name": "LIFX A19 Night Vision",
                     "color": True,
                     "temperature": True,
                     "infrared": True,
@@ -245,7 +287,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                30: {                    # LIFX BR30 Night Vision
+                30: {
+                    "name": "LIFX BR30 Night Vision",
                     "color": True,
                     "temperature": True,
                     "infrared": True,
@@ -257,7 +300,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                31: {                    # LIFX Z
+                31: {
+                    "name": "LIFX Z",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -269,7 +313,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                32: {                    # LIFX Z
+                32: {
+                    "name": "LIFX Z",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -281,7 +326,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                36: {                    # LIFX Downlight
+                36: {
+                    "name": "LIFX Downlight",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -293,7 +339,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                37: {                    # LIFX Downlight
+                37: {
+                    "name": "LIFX Downlight",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -305,7 +352,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                38: {                    # LIFX Beam
+                38: {
+                    "name": "LIFX Beam",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -317,7 +365,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                39: {                    # LIFX Downlight White To Warm
+                39: {
+                    "name": "LIFX Downlight White To Warm",
                     "color": False,
                     "temperature": True,
                     "infrared": False,
@@ -329,7 +378,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                40: {                    # LIFX Downlight
+                40: {
+                    "name": "LIFX Downlight",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -341,7 +391,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                43: {                    # LIFX A19
+                43: {
+                    "name": "LIFX A19",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -353,7 +404,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                44: {                    # LIFX BR30
+                44: {
+                    "name": "LIFX BR30",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -365,7 +417,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                45: {                    # LIFX A19 Night Vision
+                45: {
+                    "name": "LIFX A19 Night Vision",
                     "color": True,
                     "temperature": True,
                     "infrared": True,
@@ -377,7 +430,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                46: {                    # LIFX BR30 Night Vision
+                46: {
+                    "name": "LIFX BR30 Night Vision",
                     "color": True,
                     "temperature": True,
                     "infrared": True,
@@ -389,7 +443,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                49: {                    # LIFX Mini Color
+                49: {
+                    "name": "LIFX Mini Color",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -401,7 +456,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                50: {                    # LIFX Mini White To Warm
+                50: {
+                    "name": "LIFX Mini White To Warm",
                     "color": False,
                     "temperature": True,
                     "infrared": False,
@@ -413,7 +469,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                51: {                    # LIFX Mini White
+                51: {
+                    "name": "LIFX Mini White",
                     "color": False,
                     "temperature": False,
                     "infrared": False,
@@ -425,7 +482,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                52: {                    # LIFX GU10
+                52: {
+                    "name": "LIFX GU10",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -437,7 +495,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                53: {                    # LIFX GU10
+                53: {
+                    "name": "LIFX GU10",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -449,7 +508,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                55: {                    # LIFX Tile
+                55: {
+                    "name": "LIFX Tile",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -461,7 +521,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                57: {                    # LIFX Candle
+                57: {
+                    "name": "LIFX Candle",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -473,7 +534,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                59: {                    # LIFX Mini Color
+                59: {
+                    "name": "LIFX Mini Color",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -485,7 +547,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                60: {                    # LIFX Mini White To Warm
+                60: {
+                    "name": "LIFX Mini White To Warm",
                     "color": False,
                     "temperature": True,
                     "infrared": False,
@@ -497,7 +560,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                61: {                    # LIFX Mini White
+                61: {
+                    "name": "LIFX Mini White",
                     "color": False,
                     "temperature": False,
                     "infrared": False,
@@ -509,7 +573,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                62: {                    # LIFX A19
+                62: {
+                    "name": "LIFX A19",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -521,7 +586,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                63: {                    # LIFX BR30
+                63: {
+                    "name": "LIFX BR30",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -533,7 +599,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                64: {                    # LIFX A19 Night Vision
+                64: {
+                    "name": "LIFX A19 Night Vision",
                     "color": True,
                     "temperature": True,
                     "infrared": True,
@@ -545,7 +612,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                65: {                    # LIFX BR30 Night Vision
+                65: {
+                    "name": "LIFX BR30 Night Vision",
                     "color": True,
                     "temperature": True,
                     "infrared": True,
@@ -557,7 +625,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                66: {                    # LIFX Mini White
+                66: {
+                    "name": "LIFX Mini White",
                     "color": False,
                     "temperature": False,
                     "infrared": False,
@@ -569,7 +638,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                68: {                    # LIFX Candle
+                68: {
+                    "name": "LIFX Candle",
                     "color": False,
                     "temperature": True,
                     "infrared": False,
@@ -581,7 +651,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                70: {                    # LIFX Switch
+                70: {
+                    "name": "LIFX Switch",
                     "color": False,
                     "temperature": False,
                     "infrared": False,
@@ -593,7 +664,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": True,
                     "buttons": True},
-                71: {                    # LIFX Switch
+                71: {
+                    "name": "LIFX Switch",
                     "color": False,
                     "temperature": False,
                     "infrared": False,
@@ -605,7 +677,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": True,
                     "buttons": True},
-                81: {                    # LIFX Candle White To Warm
+                81: {
+                    "name": "LIFX Candle White To Warm",
                     "color": False,
                     "temperature": True,
                     "infrared": False,
@@ -617,7 +690,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                82: {                    # LIFX Filament Clear
+                82: {
+                    "name": "LIFX Filament Clear",
                     "color": False,
                     "temperature": False,
                     "infrared": False,
@@ -629,7 +703,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                85: {                    # LIFX Filament Amber
+                85: {
+                    "name": "LIFX Filament Amber",
                     "color": False,
                     "temperature": False,
                     "infrared": False,
@@ -641,7 +716,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                87: {                    # LIFX Mini White
+                87: {
+                    "name": "LIFX Mini White",
                     "color": False,
                     "temperature": False,
                     "infrared": False,
@@ -653,7 +729,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                88: {                    # LIFX Mini White
+                88: {
+                    "name": "LIFX Mini White",
                     "color": False,
                     "temperature": False,
                     "infrared": False,
@@ -665,7 +742,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                89: {                    # LIFX Switch
+                89: {
+                    "name": "LIFX Switch",
                     "color": False,
                     "temperature": False,
                     "infrared": False,
@@ -677,7 +755,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": True,
                     "buttons": True},
-                90: {                    # LIFX Clean
+                90: {
+                    "name": "LIFX Clean",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -689,7 +768,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": True,
                     "relays": False,
                     "buttons": False},
-                91: {                    # LIFX Color
+                91: {
+                    "name": "LIFX Color",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -701,7 +781,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                92: {                    # LIFX Color
+                92: {
+                    "name": "LIFX Color",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -713,7 +794,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                93: {                    # LIFX Color A19 1100lm (UNDOCUMENTED)
+                93: {
+                    "name": "LIFX A19 US",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -725,7 +807,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                94: {                    # LIFX BR30
+                94: {
+                    "name": "LIFX BR30",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -737,7 +820,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                96: {                    # LIFX Candle White To Warm
+                96: {
+                    "name": "LIFX Candle White To Warm",
                     "color": False,
                     "temperature": True,
                     "infrared": False,
@@ -749,7 +833,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                97: {                    # LIFX A19
+                97: {
+                    "name": "LIFX A19",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -761,7 +846,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                98: {                    # LIFX BR30
+                98: {
+                    "name": "LIFX BR30",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -773,7 +859,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                99: {                    # LIFX Clean
+                99: {
+                    "name": "LIFX Clean",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -785,7 +872,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": True,
                     "relays": False,
                     "buttons": False},
-                100: {                    # LIFX Filament Clear
+                100: {
+                    "name": "LIFX Filament Clear",
                     "color": False,
                     "temperature": False,
                     "infrared": False,
@@ -797,7 +885,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                101: {                    # LIFX Filament Amber
+                101: {
+                    "name": "LIFX Filament Amber",
                     "color": False,
                     "temperature": False,
                     "infrared": False,
@@ -809,7 +898,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                109: {                    # LIFX A19 Night Vision
+                109: {
+                    "name": "LIFX A19 Night Vision",
                     "color": True,
                     "temperature": True,
                     "infrared": True,
@@ -821,7 +911,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                110: {                    # LIFX BR30 Night Vision
+                110: {
+                    "name": "LIFX BR30 Night Vision",
                     "color": True,
                     "temperature": True,
                     "infrared": True,
@@ -833,7 +924,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                111: {                    # LIFX A19 Night Vision
+                111: {
+                    "name": "LIFX A19 Night Vision",
                     "color": True,
                     "temperature": True,
                     "infrared": True,
@@ -845,7 +937,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                112: {  # LIFX BR30 Night Vision Intl
+                112: {
+                    "name": "LIFX BR30 Night Vision",
                     "color": True,
                     "temperature": True,
                     "infrared": True,
@@ -857,7 +950,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                113: {  # LIFX Mini WW US
+                113: {
+                    "name": "LIFX Mini WW US",
                     "color": False,
                     "temperature": True,
                     "infrared": False,
@@ -869,7 +963,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                114: {  # LIFX Mini WW Intl
+                114: {
+                    "name": "LIFX Mini WW Intl",
                     "color": False,
                     "temperature": True,
                     "infrared": False,
@@ -881,7 +976,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                115: {  # LIFX Switch
+                115: {
+                    "name": "LIFX Switch",
                     "color": False,
                     "temperature": False,
                     "infrared": False,
@@ -894,7 +990,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "relays": True,
                     "buttons": True},
 
-                116: {  # LIFX Switch
+                116: {
+                    "name": "LIFX Switch",
                     "color": False,
                     "temperature": False,
                     "infrared": False,
@@ -906,7 +1003,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": True,
                     "buttons": True},
-                117: {  # LIFX Z US
+                117: {
+                    "name": "LIFX Z US",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -918,7 +1016,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                118: {  # LIFX Z Intl
+                118: {
+                    "name": "LIFX Z Intl",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -930,7 +1029,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                119: {   # LIFX Beam US
+                119: {
+                    "name": "LIFX Beam US",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -942,7 +1042,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                120: {   # LIFX Beam Intl
+                120: {
+                    "name": "LIFX Beam Intl",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -954,7 +1055,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                121: {  # LIFX Downlight Intl
+                121: {
+                    "name": "LIFX Downlight Intl",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -966,7 +1068,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                122: {  # LIFX Downlight US
+                122: {
+                    "name": "LIFX Downlight US",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -978,7 +1081,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                123: {  # LIFX Color US
+                123: {
+                    "name": "LIFX Color US",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -990,7 +1094,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                124: {  # LIFX Color Intl
+                124: {
+                    "name": "LIFX Color Intl",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -1002,7 +1107,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                125: {  # LIFX White to Warm US
+                125: {
+                    "name": "LIFX White to Warm US",
                     "color": False,
                     "temperature": True,
                     "infrared": False,
@@ -1014,7 +1120,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                126: {  # LIFX White to Warm Intl
+                126: {
+                    "name": "LIFX White to Warm Intl",
                     "color": False,
                     "temperature": True,
                     "infrared": False,
@@ -1026,19 +1133,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                127: {  # LIFX White US
-                    "color": False,
-                    "temperature": False,
-                    "infrared": False,
-                    "multizone": False,
-                    "chain": False,
-                    "matrix": False,
-                    "min_kelvin": 2700,
-                    "max_kelvin": 2700,
-                    "hev": False,
-                    "relays": False,
-                    "buttons": False},
-                128: {  # LIFX White Intl
+                127: {
+                    "name": "LIFX White US",
                     "color": False,
                     "temperature": False,
                     "infrared": False,
@@ -1050,55 +1146,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                129: {  # LIFX Color 1000
-                    "color": True,
-                    "temperature": True,
-                    "infrared": False,
-                    "multizone": False,
-                    "chain": False,
-                    "matrix": False,
-                    "min_kelvin": 1500,
-                    "max_kelvin": 9000,
-                    "hev": False,
-                    "relays": False,
-                    "buttons": False},
-                130: {  # LIFX Color 1000
-                    "color": True,
-                    "temperature": True,
-                    "infrared": False,
-                    "multizone": False,
-                    "chain": False,
-                    "matrix": False,
-                    "min_kelvin": 1500,
-                    "max_kelvin": 9000,
-                    "hev": False,
-                    "relays": False,
-                    "buttons": False},
-                131: {  # LIFX White to Warm US
-                    "color": False,
-                    "temperature": True,
-                    "infrared": False,
-                    "multizone": False,
-                    "chain": False,
-                    "matrix": False,
-                    "min_kelvin": 1500,
-                    "max_kelvin": 9000,
-                    "hev": False,
-                    "relays": False,
-                    "buttons": False},
-                132: {  # LIFX White to Warm Intl
-                    "color": False,
-                    "temperature": True,
-                    "infrared": False,
-                    "multizone": False,
-                    "chain": False,
-                    "matrix": False,
-                    "min_kelvin": 1500,
-                    "max_kelvin": 9000,
-                    "hev": False,
-                    "relays": False,
-                    "buttons": False},
-                133: {  # LIFX White US
+                128: {
+                    "name": "LIFX White Intl",
                     "color": False,
                     "temperature": False,
                     "infrared": False,
@@ -1110,7 +1159,60 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                134: {  # LIFX White Intl
+                129: {
+                    "name": "LIFX Color US",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": False,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+                130: {
+                    "name": "LIFX Color Intl",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": False,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+                131: {
+                    "name": "LIFX White to Warm US",
+                    "color": False,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": False,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+                132: {
+                    "name": "LIFX White to Warm Intl",
+                    "color": False,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": False,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+                133: {
+                    "name": "LIFX White US",
                     "color": False,
                     "temperature": False,
                     "infrared": False,
@@ -1122,7 +1224,21 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                135: {  # LIFX GU10 Color US
+                134: {
+                    "name": "LIFX White Intl",
+                    "color": False,
+                    "temperature": False,
+                    "infrared": False,
+                    "multizone": False,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 2700,
+                    "max_kelvin": 2700,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+                135: {
+                    "name": "LIFX GU10 Color US",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -1134,7 +1250,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                136: {  # LIFX GU10 Color Intl
+                136: {
+                    "name": "LIFX GU10 Color Intl",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -1146,7 +1263,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                137: {  # LIFX Candle US
+                137: {
+                    "name": "LIFX Candle Color US",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -1158,7 +1276,8 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
-                138: {  # LIFX Candle Intl
+                138: {
+                    "name": "LIFX Candle Color Intl",
                     "color": True,
                     "temperature": True,
                     "infrared": False,
@@ -1170,7 +1289,428 @@ features_map = {1: {                    # LIFX Original 1000
                     "hev": False,
                     "relays": False,
                     "buttons": False},
+                141: {
+                    "name": "LIFX Neon US",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": True,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+
+                142: {
+                    "name": "LIFX Neon Intl",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": True,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+
+                143: {
+                    "name": "LIFX String US",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": True,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+
+                144: {
+                    "name": "LIFX String Intl",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": True,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+
+                161: {
+                    "name": "LIFX Outdoor Neon US",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": True,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+
+                162: {
+                    "name": "LIFX Outdoor Neon Intl",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": True,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+
+                163: {
+                    "name": "LIFX A19 US",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": True,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+
+                164: {
+                    "name": "LIFX BR30 US",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": False,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+
+                165: {
+                    "name": "LIFX A19 Intl",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": True,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+
+                166: {
+                    "name": "LIFX BR30 Intl",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": False,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+
+                167: {
+                    "name": "LIFX Downlight",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": False,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+
+                168: {
+                    "name": "LIFX Downlight",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": False,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+
+                169: {
+                    "name": "LIFX A21 1600lm US",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": False,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+
+                170: {
+                    "name": "LIFX A21 1600lm Intl",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": False,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+
+                171: {
+                    "name": "LIFX Round Spot US",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": False,
+                    "chain": False,
+                    "matrix": True,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+
+                173: {
+                    "name": "LIFX Round Path US",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": False,
+                    "chain": False,
+                    "matrix": True,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+
+                174: {
+                    "name": "LIFX Square Path US",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": False,
+                    "chain": False,
+                    "matrix": True,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+
+                175: {
+                    "name": "LIFX PAR38 US",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": False,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+
+                176: {
+                    "name": "LIFX Ceiling US",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": False,
+                    "chain": False,
+                    "matrix": True,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+
+                177: {
+                    "name": "LIFX Ceiling Intl",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": False,
+                    "chain": False,
+                    "matrix": True,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+
+                181: {
+                    "name": "LIFX Color US",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": False,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+
+                182: {
+                    "name": "LIFX Color Intl",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": False,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+
+                185: {
+                    "name": "LIFX Candle Color US",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": False,
+                    "chain": False,
+                    "matrix": True,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+
+                186: {
+                    "name": "LIFX Candle Color Intl",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": False,
+                    "chain": False,
+                    "matrix": True,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+
+                187: {
+                    "name": "LIFX Candle Color US",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": False,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+
+                188: {
+                    "name": "LIFX Candle Color Intl",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": False,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+
+                203: {
+                    "name": "LIFX String US",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": True,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+
+                204: {
+                    "name": "LIFX String Intl",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": True,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+
+                205: {
+                    "name": "LIFX Indoor Neon US",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": True,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+
+                206: {
+                    "name": "LIFX Indoor Neon Intl",
+                    "color": True,
+                    "temperature": True,
+                    "infrared": False,
+                    "multizone": True,
+                    "chain": False,
+                    "matrix": False,
+                    "min_kelvin": 1500,
+                    "max_kelvin": 9000,
+                    "hev": False,
+                    "relays": False,
+                    "buttons": False},
+
                 None: {  # Default answer for unknown product
+                    "name": "Unknown Product",
                     "color": False,
                     "temperature": False,
                     "infrared": False,

@@ -228,8 +228,8 @@ class ThreadLifxlanHandler(threading.Thread):
                     elif lifx_command == CMD_SET_LABEL:
                         self.process_set_label(lifx_command, dev)
 
-                    elif lifx_command == CMD_GET_VERSION:
-                        self.process_get_version(lifx_command, dev)
+                    # elif lifx_command == CMD_GET_VERSION:
+                    #     self.process_get_version(lifx_command, dev)
 
                     elif lifx_command == CMD_GET_HOST_FIRMWARE:
                         self.process_get_host_firmware(lifx_command, dev)
@@ -882,62 +882,62 @@ class ThreadLifxlanHandler(threading.Thread):
         except Exception as exception_error:
             self.exception_handler(exception_error, True)  # Log error and display failing statement
 
-    def process_get_version(self, lifx_command, dev):
-        try:
-            dev_id = dev.id
-
-            self.lh_logger.debug(f"Processing {lifx_command} for '{indigo.devices[dev_id].name}' ")
-
-            # Clear any outstanding timers
-            self.clear_status_timer(dev)
-
-            try:
-                product = self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].get_product()
-                self.communication_ok(dev_id, lifx_command)
-            except (WorkflowException, IOError):
-                self.communication_lost(dev_id, 'get_product')
-                return
-
-            self.lh_logger.debug(f"PRODUCT for '{indigo.devices[dev_id].name}' = '{product}'")
-
-            productFound = False
-            try:
-                model = f"{LIFX_PRODUCTS[product][LIFX_PRODUCT_NAME]} [{product}]"  # LIFX_PRODUCT_NAME is defined in constants.py
-                productFound = True
-            except KeyError:
-                model = f"LIFX Product - {product}"
-
-            if dev.model != model:
-                dev.model = model
-                dev.replaceOnServer()
-
-            if productFound:
-                props = dev.pluginProps
-                propsChanged = False
-                if ("SupportsColor" not in props) or (
-                        props["SupportsColor"] != bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_COLOR])):
-                    props["SupportsColor"] = True  # Applies even if just able to change White Levels / Temperature
-                    props["SupportsRGB"] = bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_COLOR])
-                    propsChanged = True
-                if ("SupportsRGB" not in props) or (
-                        props["SupportsRGB"] != bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_COLOR])):
-                    props["SupportsRGB"] = bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_COLOR])
-                    propsChanged = True
-                if ("supports_infrared" not in props) or (
-                        props["supports_infrared"] != bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_INFRARED])):
-                    props["supports_infrared"] = bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_INFRARED])
-                    propsChanged = True
-                if ("SupportsMultizone" not in props) or (props["SupportsMultizone"] != bool(
-                        LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_MULTIZONE])):
-                    props["SupportsMultizone"] = bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_MULTIZONE])
-                    propsChanged = True
-                if propsChanged:
-                    dev.replacePluginPropsOnServer(props)
-
-            self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = lifx_command
-
-        except Exception as exception_error:
-            self.exception_handler(exception_error, True)  # Log error and display failing statement
+    # def process_get_version(self, lifx_command, dev):
+    #     try:
+    #         dev_id = dev.id
+    #
+    #         self.lh_logger.debug(f"Processing {lifx_command} for '{indigo.devices[dev_id].name}' ")
+    #
+    #         # Clear any outstanding timers
+    #         self.clear_status_timer(dev)
+    #
+    #         try:
+    #             product = self.globals[K_LIFX][dev_id][K_LIFX_DEVICE].get_product()
+    #             self.communication_ok(dev_id, lifx_command)
+    #         except (WorkflowException, IOError):
+    #             self.communication_lost(dev_id, 'get_product')
+    #             return
+    #
+    #         self.lh_logger.debug(f"PRODUCT for '{indigo.devices[dev_id].name}' = '{product}'")
+    #
+    #         productFound = False
+    #         try:
+    #             model = f"{LIFX_PRODUCTS[product][LIFX_PRODUCT_NAME]} [{product}]"  # LIFX_PRODUCT_NAME is defined in constants.py
+    #             productFound = True
+    #         except KeyError:
+    #             model = f"LIFX Product - {product}"
+    #
+    #         if dev.model != model:
+    #             dev.model = model
+    #             dev.replaceOnServer()
+    #
+    #         if productFound:
+    #             props = dev.pluginProps
+    #             propsChanged = False
+    #             if ("SupportsColor" not in props) or (
+    #                     props["SupportsColor"] != bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_COLOR])):
+    #                 props["SupportsColor"] = True  # Applies even if just able to change White Levels / Temperature
+    #                 props["SupportsRGB"] = bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_COLOR])
+    #                 propsChanged = True
+    #             if ("SupportsRGB" not in props) or (
+    #                     props["SupportsRGB"] != bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_COLOR])):
+    #                 props["SupportsRGB"] = bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_COLOR])
+    #                 propsChanged = True
+    #             if ("supports_infrared" not in props) or (
+    #                     props["supports_infrared"] != bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_INFRARED])):
+    #                 props["supports_infrared"] = bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_INFRARED])
+    #                 propsChanged = True
+    #             if ("SupportsMultizone" not in props) or (props["SupportsMultizone"] != bool(
+    #                     LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_MULTIZONE])):
+    #                 props["SupportsMultizone"] = bool(LIFX_PRODUCTS[product][LIFX_PRODUCT_SUPPORTS_MULTIZONE])
+    #                 propsChanged = True
+    #             if propsChanged:
+    #                 dev.replacePluginPropsOnServer(props)
+    #
+    #         self.globals[K_LIFX][dev_id][K_LIFX_COMMAND_PREVIOUS] = lifx_command
+    #
+    #     except Exception as exception_error:
+    #         self.exception_handler(exception_error, True)  # Log error and display failing statement
 
     def process_get_wifi_firmware(self, lifx_command, dev, lifx_command_arguments):
         try:
