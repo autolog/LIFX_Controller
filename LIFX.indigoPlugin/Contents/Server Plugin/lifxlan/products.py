@@ -1,4 +1,3 @@
-# coding=utf-8
 product_map = {
     1: 'LIFX Original 1000',
     3: 'LIFX Color 650',
@@ -130,8 +129,8 @@ product_map = {
     216: 'LIFX Candle Colour Intl',
     217: 'LIFX Tube US',
     218: 'LIFX Tube Intl',
-    219: 'LIFX Capsule Mini US',
-    220: 'LIFX Capsule Mini Intl',
+    219: 'LIFX Luna US',
+    220: 'LIFX Luna Intl',
     221: 'LIFX Round Spot Intl',
     222: 'LIFX Round Path Intl',
     223: 'LIFX Downlight US',
@@ -145,7 +144,8 @@ light_products = [1, 3, 10, 11, 15, 18, 19, 20, 22, 27, 28, 29, 30, 31, 32, 36, 
      50, 51, 52, 53, 55, 57, 59, 60, 61, 62, 63, 64, 65, 66, 68, 81, 82, 85, 87, 88, 90, 91, 92, 93, 94, 96, 97, 98, 99,
      100, 101, 109, 110, 111, 112, 113, 114, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129,
      130, 131, 132, 133, 134, 135, 136, 137, 138, 141, 142, 143, 144, 161, 162, 163, 164, 165, 166, 167, 168, 169,
-     170, 171, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 185, 186, 187, 188, 201, 202, 203, 204, 205, 206, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225]
+     170, 171, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 185, 186, 187, 188, 
+     201, 202, 203, 204, 205, 206, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225]
 
 # Identifies which products are switches.
 switch_products = [70, 71, 89, 115, 116]
@@ -1720,7 +1720,7 @@ features_map = {
         'max_kelvin': 9000,
         'min_kelvin': 1500,
         'multizone': False,
-        'name': 'LIFX Capsule Mini US',
+        'name': 'LIFX Luna US',
         'relays': False,
         'temperature': False},
     220: {       'buttons': False,
@@ -1732,7 +1732,7 @@ features_map = {
         'max_kelvin': 9000,
         'min_kelvin': 1500,
         'multizone': False,
-        'name': 'LIFX Capsule Mini Intl',
+        'name': 'LIFX Luna Intl',
         'relays': False,
         'temperature': False},
     221: {       'buttons': False,
