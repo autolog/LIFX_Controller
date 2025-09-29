@@ -23,6 +23,8 @@ from socket import AF_INET, SOCK_DGRAM, SOL_SOCKET, SO_BROADCAST, SO_REUSEADDR, 
 from time import sleep, time
 import platform
 #import netifaces as ni
+import ifaddr
+import struct
 
 from .errors import WorkflowException
 from .msgtypes import Acknowledgement, GetGroup, GetHostFirmware, GetInfo, GetLabel, GetLocation, GetPower, GetVersion, \
@@ -39,9 +41,32 @@ VERBOSE = False
 
 def get_broadcast_addrs():
     broadcast_addrs = []
-    # broadcast_addrs.append("255.255.255.255")
-    broadcast_addrs.append("192.168.0.255")
-    broadcast_addrs.append("192.168.1.255")
+    for iface in ifaddr.get_adapters():
+        for addr in iface.ips:
+            if not addr.is_IPv4:
+                continue
+
+            ip = addr.ip
+            prefix = addr.network_prefix
+
+            if ip == '127.0.0.1':
+                continue
+
+            numeric = struct.unpack(
+                '>I',
+                struct.pack('BBBB', *[int(x, 10) for x in ip.split('.')])
+            )[0]
+            mask = ~int('1' * prefix + '0' * (32 - prefix), 2) & 0xffffffff
+
+            broadcast = '.'.join(
+                str(x) for x in struct.unpack(
+                    'BBBB',
+                    struct.pack('>I', numeric | mask)
+                )
+            )
+
+            broadcast_addrs.append(broadcast)
+
     return broadcast_addrs
 
 UDP_BROADCAST_IP_ADDRS = get_broadcast_addrs()
